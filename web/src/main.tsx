@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { formatNumber, formatTime } from "./i18n/format";
 import { CODE_SLOT, aroundCode } from "./i18n/code";
+import { FrameTable, type FrameBusEvent } from "./FrameTable";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -45,10 +46,7 @@ import { StressPanel } from "./StressPanel";
 import "./style.css";
 import { TaskPanel } from "./TaskPanel";
 import { TransmissionActions } from "./TransmissionActions";
-type FrameBusEvent = Extract<BusEvent, { type: "frame_received" }>;
 const MAX_ROWS = 10000;
-// Rows rendered beyond each edge of the visible part of the frame list.
-const ROW_OVERSCAN = 12;
 // Capture once, before React effects. The code never reaches storage or request URLs.
 const pairCode = new URLSearchParams(location.hash.slice(1)).get("pair");
 if (pairCode) history.replaceState(null, "", location.pathname);
@@ -364,22 +362,6 @@ function App() {
       row.frame.id.toString(16).toUpperCase() === normalizedId) &&
     (directionFilter === "all" || row.direction === directionFilter);
   const visibleRows = rows.filter(matchesFilter);
-  // Only the rows near the scroll position are rendered. Spacer rows keep the
-  // scroll height of the whole retained list; all rows have the same height.
-  const [frameViewport, setFrameViewport] = useState({ top: 0, height: 480 });
-  const [rowHeight, setRowHeight] = useState(36);
-  const measureRow = (row: HTMLTableRowElement | null) => {
-    const height = row?.getBoundingClientRect().height;
-    if (height && Math.abs(height - rowHeight) > 0.5) setRowHeight(height);
-  };
-  const firstRow = Math.min(
-    Math.max(0, visibleRows.length - 1),
-    Math.max(0, Math.floor(frameViewport.top / rowHeight) - ROW_OVERSCAN),
-  );
-  const lastRow = Math.min(
-    visibleRows.length,
-    firstRow + Math.ceil(frameViewport.height / rowHeight) + 2 * ROW_OVERSCAN,
-  );
   const visibleAggregates = aggregates.filter((group) =>
     matchesFilter(group.latest),
   );
@@ -1708,101 +1690,11 @@ function App() {
                 )}
               </div>
             )}
-            <div
-              className="table-scroll"
+            <FrameTable
+              rows={visibleRows}
+              origin={elapsedOrigin.current}
               hidden={monitorView !== "frames"}
-              onScroll={(event) => {
-                const { scrollTop, clientHeight } = event.currentTarget;
-                setFrameViewport((old) =>
-                  old.top === scrollTop && old.height === clientHeight
-                    ? old
-                    : { top: scrollTop, height: clientHeight },
-                );
-              }}
             >
-              <table aria-rowcount={visibleRows.length + 1}>
-                <thead>
-                  <tr>
-                    <th>{text("main:sequence")}</th>
-                    <th>{text("main:elapsed_s")}</th>
-                    <th>{text("main:dir")}</th>
-                    <th>{text("main:id_hex")}</th>
-                    <th>{text("main:type")}</th>
-                    <th>DLC</th>
-                    <th>{text("main:data_hex")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {firstRow > 0 && (
-                    <tr className="row-spacer" aria-hidden="true">
-                      <td
-                        colSpan={7}
-                        style={{ height: firstRow * rowHeight }}
-                      />
-                    </tr>
-                  )}
-                  {visibleRows.slice(firstRow, lastRow).map((row, offset) => (
-                    <tr
-                      key={`${row.sequence}-${firstRow + offset}`}
-                      aria-rowindex={firstRow + offset + 2}
-                      ref={offset === 0 ? measureRow : undefined}
-                    >
-                      <td>{row.sequence}</td>
-                      <td
-                        title={text("main:value_reported_value_s_epoch_value", {
-                          timestamp_quality: row.timestamp_quality,
-                          value: row.device_raw_timestamp_us ?? "unavailable",
-                          timestamp_epoch: row.timestamp_epoch,
-                        })}
-                      >
-                        {(
-                          Number(
-                            (BigInt(row.host_monotonic_ns) -
-                              BigInt(
-                                elapsedOrigin.current ?? row.host_monotonic_ns,
-                              )) /
-                              1000000n,
-                          ) / 1000
-                        ).toFixed(3)}
-                      </td>
-                      <td>
-                        <span className={`direction ${row.direction}`}>
-                          {row.direction.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="frame-id">
-                        {row.frame.id
-                          .toString(16)
-                          .toUpperCase()
-                          .padStart(row.frame.extended ? 8 : 3, "0")}
-                      </td>
-                      <td>
-                        {row.frame.kind === "fd_data"
-                          ? "FD"
-                          : row.frame.kind === "classic_remote"
-                            ? "RTR"
-                            : "CAN"}
-                        {row.frame.brs ? " · BRS" : ""}
-                        {row.frame.esi ? " · ESI" : ""}
-                      </td>
-                      <td>{row.frame.dlc}</td>
-                      <td>
-                        {row.frame.data_hex.match(/.{2}/g)?.join(" ") || "—"}
-                      </td>
-                    </tr>
-                  ))}
-                  {lastRow < visibleRows.length && (
-                    <tr className="row-spacer" aria-hidden="true">
-                      <td
-                        colSpan={7}
-                        style={{
-                          height: (visibleRows.length - lastRow) * rowHeight,
-                        }}
-                      />
-                    </tr>
-                  )}
-                </tbody>
-              </table>
               {!!rows.length && !visibleRows.length && (
                 <div className="empty">
                   <p>{text("main:no_frames_match_the_current_filters")}</p>
@@ -1829,7 +1721,7 @@ function App() {
                   </p>
                 </div>
               )}
-            </div>
+            </FrameTable>
             <div className="table-footer">
               <span>{text("main:time_relative_to_first_received_frame")}</span>
               <span>{text("main:last_frames_value", { rows: MAX_ROWS })}</span>
