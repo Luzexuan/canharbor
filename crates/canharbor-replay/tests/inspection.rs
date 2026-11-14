@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-use canharbor_replay::{export_asc, export_candump, inspect};
+use canharbor_replay::{export_asc, export_blf, export_candump, inspect};
 use serde_json::Value;
 use std::io::{Cursor, Read};
 fn fixtures() -> Value {
@@ -245,4 +245,136 @@ fn asc_export_keeps_direction_and_counts_time_from_the_first_event() {
     let mut log = Vec::new();
     export_asc(bytes(&late).as_slice(), &mut log, 1).unwrap();
     assert!(log.starts_with(b"date Fri Dec 31 23:59:59.999 9999\n"));
+}
+#[test]
+fn blf_export_writes_whole_objects_in_uncompressed_containers() {
+    let fixtures = fixtures();
+    let base = &fixtures["valid"][0]["records"];
+    let u16_at = |log: &[u8], at: usize| u16::from_le_bytes(log[at..at + 2].try_into().unwrap());
+    let u32_at = |log: &[u8], at: usize| u32::from_le_bytes(log[at..at + 4].try_into().unwrap());
+    let u64_at = |log: &[u8], at: usize| u64::from_le_bytes(log[at..at + 8].try_into().unwrap());
+    let capture = |count: usize| {
+        let mut header = base[0].clone();
+        // 2026-11-15 10:00:00.123 UTC, a Sunday.
+        header["created_unix_ms"] = "1794736800123".into();
+        let mut records = vec![header];
+        for i in 0..count {
+            let mut e = base[1].clone();
+            e["event"]["sequence"] = (i + 1).to_string().into();
+            e["event"]["host_monotonic_ns"] = (5_000_000_000 + i as u64 * 2_000_000_000)
+                .to_string()
+                .into();
+            e["event"]["raw_dlc"] = Value::Null;
+            e["event"]["direction"] = if i % 2 == 0 { "rx" } else { "tx" }.into();
+            e["event"]["frame"] = if i % 2 == 0 {
+                serde_json::json!({
+                    "kind": "classic_data", "id": 0x1abc_def0, "extended": true,
+                    "brs": false, "esi": false, "data_hex": "0102", "dlc": 2
+                })
+            } else {
+                serde_json::json!({
+                    "kind": "fd_data", "id": 0x12, "extended": false,
+                    "brs": true, "esi": true, "data_hex": "aabbcc", "dlc": 3
+                })
+            };
+            records.push(e);
+        }
+        bytes(&records.into())
+    };
+
+    let mut log = Cursor::new(Vec::new());
+    let summary = export_blf(Tiny(Cursor::new(capture(2))), &mut log, 3).unwrap();
+    assert_eq!(summary.frames.as_str(), "2");
+    let log = log.into_inner();
+    // File header: sizes, object count and the two times.
+    assert_eq!(&log[..4], b"LOGG");
+    assert_eq!(u32_at(&log, 4), 144);
+    assert_eq!(u64_at(&log, 16), log.len() as u64);
+    assert_eq!(u64_at(&log, 24), log.len() as u64);
+    assert_eq!(u32_at(&log, 32), 2);
+    let time = |at: usize| (0..8).map(|i| u16_at(&log, at + 2 * i)).collect::<Vec<_>>();
+    assert_eq!(time(40), [2026, 11, 0, 15, 10, 0, 0, 123]);
+    // The second frame is two seconds after the first.
+    assert_eq!(time(56), [2026, 11, 0, 15, 10, 0, 2, 123]);
+    assert!(log[72..144].iter().all(|byte| *byte == 0));
+    // One container holding a classic object (48 bytes) and an FD one (116).
+    assert_eq!(log.len(), 144 + 32 + 48 + 116);
+    assert_eq!(&log[144..148], b"LOBJ");
+    assert_eq!((u16_at(&log, 148), u16_at(&log, 150)), (16, 1));
+    assert_eq!((u32_at(&log, 152), u32_at(&log, 156)), (32 + 164, 10));
+    assert_eq!((u16_at(&log, 160), u32_at(&log, 168)), (0, 164));
+    let classic = &log[176..224];
+    assert_eq!(&classic[..4], b"LOBJ");
+    assert_eq!((u16_at(classic, 4), u16_at(classic, 6)), (32, 1));
+    assert_eq!((u32_at(classic, 8), u32_at(classic, 12)), (48, 1));
+    assert_eq!((u32_at(classic, 16), u64_at(classic, 24)), (2, 0));
+    // Channel, flags (received, data), DLC, identifier with the extended bit.
+    assert_eq!(u16_at(classic, 32), 3);
+    assert_eq!(classic[34..36], [0, 2]);
+    assert_eq!(u32_at(classic, 36), 0x9abc_def0);
+    assert_eq!(classic[40..48], [1, 2, 0, 0, 0, 0, 0, 0]);
+    let fd = &log[224..];
+    assert_eq!((u32_at(fd, 8), u32_at(fd, 12)), (116, 100));
+    assert_eq!(u64_at(fd, 24), 2_000_000_000);
+    // Transmitted; FD flags EDL, BRS and ESI; three valid bytes.
+    assert_eq!(fd[34..36], [1, 3]);
+    assert_eq!(u32_at(fd, 36), 0x12);
+    assert_eq!(fd[45..47], [0b111, 3]);
+    assert_eq!(fd[52..56], [0xaa, 0xbb, 0xcc, 0]);
+
+    // Enough frames for several containers: every container starts with an
+    // object header, so no object is split, and the sizes add up.
+    let mut log = Cursor::new(Vec::new());
+    let summary = export_blf(capture(4000).as_slice(), &mut log, 1).unwrap();
+    assert_eq!(summary.frames.as_str(), "4000");
+    let log = log.into_inner();
+    assert_eq!(u64_at(&log, 16), log.len() as u64);
+    assert_eq!(u32_at(&log, 32), 4000);
+    let (mut at, mut containers, mut objects) = (144, 0, 0);
+    while at < log.len() {
+        assert_eq!(&log[at..at + 4], b"LOBJ");
+        assert_eq!(u32_at(&log, at + 12), 10);
+        let end = at + u32_at(&log, at + 8) as usize;
+        assert_eq!(u32_at(&log, at + 24) as usize, end - at - 32);
+        let mut inner = at + 32;
+        while inner < end {
+            assert_eq!(&log[inner..inner + 4], b"LOBJ");
+            inner += u32_at(&log, inner + 8) as usize;
+            objects += 1;
+        }
+        assert_eq!(inner, end);
+        at = end;
+        containers += 1;
+    }
+    assert_eq!(objects, 4000);
+    assert!(containers > 1, "{containers}");
+
+    // A capture without frames is a header and nothing else.
+    let diagnostic = fixtures["valid"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["name"] == "diagnostic_only")
+        .unwrap();
+    let mut log = Cursor::new(Vec::new());
+    let summary = export_blf(bytes(&diagnostic["records"]).as_slice(), &mut log, 1).unwrap();
+    assert_eq!(summary.skipped_diagnostics.as_str(), "1");
+    let log = log.into_inner();
+    assert_eq!(log.len(), 144);
+    assert_eq!((u64_at(&log, 16), u32_at(&log, 32)), (144, 0));
+
+    for case in fixtures["invalid"].as_array().unwrap() {
+        assert!(
+            export_blf(
+                bytes(&case["records"]).as_slice(),
+                Cursor::new(Vec::new()),
+                1
+            )
+            .is_err(),
+            "{}",
+            case["name"]
+        );
+    }
+    let valid = bytes(&fixtures["valid"][0]["records"]);
+    assert!(export_blf(valid.as_slice(), Cursor::new(Vec::new()), 0).is_err());
 }

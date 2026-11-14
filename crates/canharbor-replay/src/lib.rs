@@ -6,7 +6,7 @@ use canharbor_capture::{Header, Reason, Record, Scan};
 use serde::Serialize;
 use std::{
     collections::VecDeque,
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
 };
 #[derive(Debug, Serialize)]
 pub struct Inspection {
@@ -226,8 +226,19 @@ pub fn export_candump<R: Read, W: Write>(
     })
 }
 
-/// `Www Mmm dd HH:MM:SS.mmm yyyy` in UTC, the date form of an ASC header.
-fn asc_date(unix_ms: u64) -> Result<String, Error> {
+/// A UTC calendar time.
+struct Civil {
+    year: u16,
+    month: u16,
+    day: u16,
+    /// Sunday is 0.
+    weekday: u16,
+    hour: u16,
+    minute: u16,
+    second: u16,
+    millisecond: u16,
+}
+fn civil(unix_ms: u64) -> Result<Civil, Error> {
     let days = unix_ms / 86_400_000;
     let ms = unix_ms % 86_400_000;
     // Civil date from a day count (proleptic Gregorian, days since 1970-01-01).
@@ -243,20 +254,35 @@ fn asc_date(unix_ms: u64) -> Result<String, Error> {
     if year > 9999 {
         return Err(Error::Invalid("capture creation time out of range"));
     }
-    const WEEKDAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
+    Ok(Civil {
+        year: year as u16,
+        month: month as u16,
+        day: day as u16,
+        // 1970-01-01 was a Thursday.
+        weekday: ((days + 4) % 7) as u16,
+        hour: (ms / 3_600_000) as u16,
+        minute: (ms / 60_000 % 60) as u16,
+        second: (ms / 1_000 % 60) as u16,
+        millisecond: (ms % 1_000) as u16,
+    })
+}
+/// `Www Mmm dd HH:MM:SS.mmm yyyy` in UTC, the date form of an ASC header.
+fn asc_date(unix_ms: u64) -> Result<String, Error> {
+    const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const MONTHS: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
+    let t = civil(unix_ms)?;
     Ok(format!(
         "{} {} {:02} {:02}:{:02}:{:02}.{:03} {}",
-        WEEKDAYS[(days % 7) as usize],
-        MONTHS[(month - 1) as usize],
-        day,
-        ms / 3_600_000,
-        ms / 60_000 % 60,
-        ms / 1_000 % 60,
-        ms % 1_000,
-        year
+        WEEKDAYS[usize::from(t.weekday)],
+        MONTHS[usize::from(t.month - 1)],
+        t.day,
+        t.hour,
+        t.minute,
+        t.second,
+        t.millisecond,
+        t.year
     ))
 }
 /// Write the frames of a capture as a Vector ASCII log (`.asc`).
@@ -364,6 +390,192 @@ pub fn export_asc<R: Read, W: Write>(
         Ok(())
     })?;
     writeln!(writer, "End TriggerBlock")?;
+    writer.flush()?;
+    Ok(Export {
+        complete: scan.complete,
+        truncated: scan.truncated,
+        frames: frames.into(),
+        skipped_diagnostics: skipped.into(),
+        dropped: scan.dropped.into(),
+        unknown_loss: scan.unknown_loss,
+        reason: scan.reason,
+    })
+}
+
+const BLF_HEADER_SIZE: u64 = 144;
+/// Uncompressed bytes per log container; objects are not split across them.
+const BLF_CONTAINER: usize = 128 * 1024;
+fn blf_header<W: Write>(
+    writer: &mut W,
+    file_size: u64,
+    uncompressed: u64,
+    objects: u32,
+    start: &Civil,
+    stop: &Civil,
+) -> std::io::Result<()> {
+    let mut header = Vec::with_capacity(BLF_HEADER_SIZE as usize);
+    header.extend_from_slice(b"LOGG");
+    header.extend_from_slice(&(BLF_HEADER_SIZE as u32).to_le_bytes());
+    // Application identifier and version: none claimed. Then the version of
+    // the logging format, as python-can writes it.
+    header.extend_from_slice(&[0, 0, 0, 0, 2, 6, 8, 1]);
+    header.extend_from_slice(&file_size.to_le_bytes());
+    header.extend_from_slice(&uncompressed.to_le_bytes());
+    header.extend_from_slice(&objects.to_le_bytes());
+    header.extend_from_slice(&0u32.to_le_bytes());
+    for time in [start, stop] {
+        for field in [
+            time.year,
+            time.month,
+            time.weekday,
+            time.day,
+            time.hour,
+            time.minute,
+            time.second,
+            time.millisecond,
+        ] {
+            header.extend_from_slice(&field.to_le_bytes());
+        }
+    }
+    header.resize(BLF_HEADER_SIZE as usize, 0);
+    writer.write_all(&header)
+}
+/// Write `objects` as one uncompressed log container and clear it.
+fn blf_container<W: Write>(writer: &mut W, objects: &mut Vec<u8>) -> std::io::Result<u64> {
+    if objects.is_empty() {
+        return Ok(0);
+    }
+    let size = 32 + objects.len();
+    writer.write_all(b"LOBJ")?;
+    writer.write_all(&16u16.to_le_bytes())?;
+    writer.write_all(&1u16.to_le_bytes())?;
+    writer.write_all(&(size as u32).to_le_bytes())?;
+    // Object type 10: log container. Compression method 0: none.
+    writer.write_all(&10u32.to_le_bytes())?;
+    writer.write_all(&[0; 8])?;
+    writer.write_all(&(objects.len() as u32).to_le_bytes())?;
+    writer.write_all(&[0; 4])?;
+    writer.write_all(objects)?;
+    objects.clear();
+    Ok(size as u64)
+}
+/// Write the frames of a capture as a Vector binary log (`.blf`).
+///
+/// The layout follows the one python-can writes and reads: classic frames as
+/// `CAN_MESSAGE` objects and CAN FD frames as `CAN_FD_MESSAGE` objects, with
+/// nanosecond timestamps, inside log containers. The containers are not
+/// compressed, which the format allows; files are larger than those of tools
+/// that compress. Direction is kept.
+///
+/// The input gets the same validation as [`inspect`]. The start time in the
+/// file header is the capture's creation time in UTC. Object times count from
+/// the first event of the capture on the service's monotonic clock, so they
+/// are offsets within the recording rather than offsets from that start time.
+/// Raw DLC, timestamp quality and device timestamps are dropped; diagnostics
+/// are counted and skipped, and gaps are not marked.
+///
+/// The header is rewritten at the end with the final sizes, so `writer` must
+/// be positioned at the start of an empty destination. An error can leave
+/// partial output in it.
+pub fn export_blf<R: Read, W: Write + Seek>(
+    reader: R,
+    mut writer: W,
+    channel: u8,
+) -> Result<Export, Error> {
+    if channel == 0 {
+        return Err(Error::Invalid("BLF channel numbers start at 1"));
+    }
+    let mut frames = 0u64;
+    let mut skipped = 0u64;
+    let mut origin = None;
+    let mut created = 0u64;
+    let mut last = 0u64;
+    let mut objects = Vec::with_capacity(BLF_CONTAINER + 128);
+    let mut file_size = BLF_HEADER_SIZE;
+    let scan = validated_with_header(reader, |item| {
+        let event = match item {
+            Item::Header(header) => {
+                // The scanner has already checked that this is a canonical u64.
+                created = header.created_unix_ms.parse::<u64>().unwrap();
+                let start = civil(created)?;
+                // Placeholder sizes; rewritten once they are known.
+                blf_header(&mut writer, 0, 0, 0, &start, &start)?;
+                return Ok(());
+            }
+            Item::Event(event) => event,
+        };
+        let (BusEvent::FrameReceived {
+            host_monotonic_ns, ..
+        }
+        | BusEvent::BusDiagnostic {
+            host_monotonic_ns, ..
+        }) = &event;
+        let ns = host_monotonic_ns.as_str().parse::<u64>().unwrap();
+        // Times never move backwards within a validated capture.
+        let elapsed = ns - *origin.get_or_insert(ns);
+        last = elapsed;
+        let BusEvent::FrameReceived {
+            direction, frame, ..
+        } = event
+        else {
+            skipped += 1;
+            return Ok(());
+        };
+        if frames == u64::from(u32::MAX) {
+            return Err(Error::Invalid("too many frames for a BLF file"));
+        }
+        let fd = matches!(frame.kind, FrameKind::FdData);
+        let (kind, body): (u32, usize) = if fd { (100, 84) } else { (1, 16) };
+        objects.extend_from_slice(b"LOBJ");
+        objects.extend_from_slice(&32u16.to_le_bytes());
+        objects.extend_from_slice(&1u16.to_le_bytes());
+        objects.extend_from_slice(&((32 + body) as u32).to_le_bytes());
+        objects.extend_from_slice(&kind.to_le_bytes());
+        // Timestamp unit flag 2: nanoseconds. Client index and version zero.
+        objects.extend_from_slice(&2u32.to_le_bytes());
+        objects.extend_from_slice(&[0; 4]);
+        objects.extend_from_slice(&elapsed.to_le_bytes());
+        // Flags: bit 0 marks a transmitted frame, bit 7 a remote frame.
+        let flags = u8::from(matches!(direction, Direction::Tx))
+            | u8::from(matches!(frame.kind, FrameKind::ClassicRemote)) << 7;
+        let id = frame.id | u32::from(frame.extended) << 31;
+        let end = objects.len() + body;
+        objects.extend_from_slice(&u16::from(channel).to_le_bytes());
+        objects.extend_from_slice(&[flags, frame.dlc]);
+        objects.extend_from_slice(&id.to_le_bytes());
+        if fd {
+            // Frame length and bit count are not recorded. FD flags: bit 0
+            // marks a CAN FD frame, bit 1 BRS, bit 2 ESI.
+            objects.extend_from_slice(&[0; 5]);
+            objects.push(1 | u8::from(frame.brs) << 1 | u8::from(frame.esi) << 2);
+            objects.push((frame.data_hex.len() / 2) as u8);
+            objects.extend_from_slice(&[0; 5]);
+        }
+        for byte in frame.data_hex.as_bytes().chunks(2) {
+            // Validated as hexadecimal digits above.
+            let digit = |c: u8| (c as char).to_digit(16).unwrap() as u8;
+            objects.push(digit(byte[0]) << 4 | digit(byte[1]));
+        }
+        objects.resize(end, 0);
+        frames += 1;
+        if objects.len() >= BLF_CONTAINER {
+            file_size += blf_container(&mut writer, &mut objects)?;
+        }
+        Ok(())
+    })?;
+    file_size += blf_container(&mut writer, &mut objects)?;
+    // With no compression the uncompressed size is the file size.
+    let stop = civil(created.saturating_add(last / 1_000_000)).or_else(|_| civil(created))?;
+    writer.seek(SeekFrom::Start(0))?;
+    blf_header(
+        &mut writer,
+        file_size,
+        file_size,
+        frames as u32,
+        &civil(created)?,
+        &stop,
+    )?;
+    writer.seek(SeekFrom::Start(file_size))?;
     writer.flush()?;
     Ok(Export {
         complete: scan.complete,

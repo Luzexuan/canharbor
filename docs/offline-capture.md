@@ -62,7 +62,7 @@ End TriggerBlock
 ```
 
 Unlike the can-utils log, each line keeps the frame's direction. The channel
-number on every line is `--asc-channel` (default 1); a recording covers one
+number on every line is `--channel-number` (default 1); a recording covers one
 channel.
 
 - The `date` is the recording's creation time in UTC. The format has no time
@@ -80,7 +80,31 @@ channel.
 The layout follows the one python-can 4.6 writes, and a test reads the output
 back with python-can's reader. A CAN FD frame with no data is the one case that
 reader reports differently: it returns such a line as a remote frame. The
-output has not been opened in Vector's tools. BLF is not supported.
+output has not been opened in Vector's tools.
+
+## Export to a Vector binary log
+
+`canharbor capture export capture.ndjson --output capture.blf --format blf`
+writes the frames as a BLF file. Validation, the JSON summary, the handling of
+the destination file and `--channel-number` are as above.
+
+- Classic frames are written as `CAN_MESSAGE` objects and CAN FD frames as
+  `CAN_FD_MESSAGE` objects, with nanosecond timestamps. Direction is kept.
+- The log containers are not compressed. The format allows this, and it keeps
+  a compression library out of the build; a file is larger than one written
+  by a tool that compresses. Each container holds whole objects.
+- The start time in the file header is the recording's creation time, stored
+  as UTC. Object times count from the first event in the recording, as in the
+  ASC export. The stop time is the start time plus the offset of the last
+  event.
+- The header names no application. Frame length and bit count of CAN FD
+  objects are zero, since a recording does not hold them.
+- Raw DLC, timestamp quality and device timestamps are dropped. Diagnostic
+  events are skipped and counted; gaps are not marked.
+
+The layout follows the one python-can 4.6 writes, and a test reads the output
+back with python-can's reader, including a CAN FD frame without data. The
+output has not been opened in Vector's tools.
 
 The shared synthetic capture corpus covers Classic raw DLC, CAN FD BRS/ESI,
 64-bit precision, diagnostics, recoverable prefixes and invalid frames. Tests

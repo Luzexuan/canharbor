@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Executed by the CLI's offline test: read an exported ASC log with python-can.
+"""Executed by the CLI's offline test: read an exported log with python-can.
+
+The reader is chosen by the file extension (.asc or .blf).
 
 Prints the messages as JSON, or a line starting with "skipped" when python-can
 is not installed.
@@ -13,11 +15,15 @@ except ImportError:
     print("skipped: python-can is not installed")
     raise SystemExit(0)
 
+reader = can.LogReader(sys.argv[1])
+# The ASC reader reports times from the start of the measurement. The BLF
+# reader adds the start time in the file header.
+start = getattr(reader, "start_timestamp", 0.0)
 print(
     json.dumps(
         [
             {
-                "us": round(message.timestamp * 1_000_000),
+                "us": round((message.timestamp - start) * 1_000_000),
                 "id": message.arbitration_id,
                 "extended": message.is_extended_id,
                 "rx": message.is_rx,
@@ -29,7 +35,7 @@ print(
                 "data": message.data.hex(),
                 "channel": message.channel,
             }
-            for message in can.ASCReader(sys.argv[1])
+            for message in reader
         ]
     )
 )
