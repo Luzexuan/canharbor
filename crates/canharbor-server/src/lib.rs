@@ -941,21 +941,26 @@ async fn stream_loop(
     let mut ticker = tokio::time::interval(Duration::from_millis(20));
     let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
     let mut last_pong = Instant::now();
-    loop {
+    // Why the subscription ended; reported by the optional stream log.
+    let reason: String = loop {
         tokio::select! {
             _ = heartbeat.tick() => {
-                if last_pong.elapsed() > Duration::from_secs(30) || s.runtime.get(&id).await.is_err() { break; }
-                if let Some(c) = &identity.cookie && !s.browser_valid(c).await { break; }
-                if !matches!(tokio::time::timeout(Duration::from_secs(2), tx.send(Message::Ping(vec![].into()))).await, Ok(Ok(()))) { break; }
+                if last_pong.elapsed() > Duration::from_secs(30) { break "no keep-alive reply for 30 s".into(); }
+                if s.runtime.get(&id).await.is_err() { break "session no longer exists".into(); }
+                if let Some(c) = &identity.cookie && !s.browser_valid(c).await { break "browser session ended".into(); }
+                if !matches!(tokio::time::timeout(Duration::from_secs(2), tx.send(Message::Ping(vec![].into()))).await, Ok(Ok(()))) { break "keep-alive not written within 2 s".into(); }
             }
             incoming = rx.next() => {
                 match incoming {
                     Some(Ok(Message::Pong(_))) => last_pong = Instant::now(),
                     Some(Ok(Message::Ping(p))) => {
-                        if !matches!(tokio::time::timeout(Duration::from_secs(2), tx.send(Message::Pong(p))).await, Ok(Ok(()))) { break; }
+                        if !matches!(tokio::time::timeout(Duration::from_secs(2), tx.send(Message::Pong(p))).await, Ok(Ok(()))) { break "keep-alive reply not written within 2 s".into(); }
                     }
                     Some(Ok(Message::Text(t))) if t == "ping" => last_pong = Instant::now(),
-                    _ => break,
+                    Some(Ok(Message::Close(_))) => break "client closed the stream".into(),
+                    Some(Ok(_)) => break "unexpected message from client".into(),
+                    Some(Err(error)) => break format!("transport error: {error}"),
+                    None => break "client disconnected".into(),
                 }
             }
             _ = ticker.tick() => {
@@ -979,9 +984,9 @@ async fn stream_loop(
                 }
                 if lagged > 0 {
                     let gap = dto::StreamMessage::Gap{cause:dto::GapCause::SubscriberLag,count:lagged.into()};
-                    if !send_ws(&mut tx, gap).await { break; }
+                    if !send_ws(&mut tx, gap).await { break "gap notice not written within 2 s".into(); }
                 }
-                if !events.is_empty() && !send_ws(&mut tx, dto::StreamMessage::Events{server_instance_id:s.instance.clone(),session_epoch:id.clone(),events}).await { break; }
+                if !events.is_empty() && !send_ws(&mut tx, dto::StreamMessage::Events{server_instance_id:s.instance.clone(),session_epoch:id.clone(),events}).await { break "events not written within 2 s".into(); }
                 if closed {
                             if let Ok(view)=s.runtime.get(&id).await && let Some(fault)=view.fault {
                                 let state=if fault==canharbor_core::BackendFault::Disconnected {dto::SessionState::Disconnected}else{dto::SessionState::Faulted};
@@ -999,11 +1004,13 @@ async fn stream_loop(
                                     }
                                 }
                             }).await;
+                            request_log::stream_closed("acquisition ended", identity.cookie.is_none());
                             return;
                 }
             }
         }
-    }
+    };
+    request_log::stream_closed(&reason, identity.cookie.is_none());
 }
 
 fn visible_notice(notice: &canharbor_core::runtime::Notice, filter: &dto::Filter) -> bool {

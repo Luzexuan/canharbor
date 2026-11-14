@@ -6,6 +6,9 @@ use std::{path::PathBuf, sync::Arc};
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn python_wrapper_runs_control_against_the_compiled_c_abi() {
     assert_eq!(canharbor_ffi::canharbor_abi_version(), 1);
+    // Shown with the captured output when a script fails: why the service
+    // ended an event subscription.
+    canharbor_server::request_log::enable_streams();
     let root = test_temp_dir().join(format!("ch-py-{}", uuid::Uuid::new_v4().simple()));
     let server = RunningServer::start(
         Runtime::new(Arc::new(VirtualBus::default())),

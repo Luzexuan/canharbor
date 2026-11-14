@@ -20,6 +20,26 @@ static ENABLED: AtomicBool = AtomicBool::new(false);
 /// Process-wide switch, set once by the service entry point before serving.
 pub fn enable() {
     ENABLED.store(true, Ordering::Relaxed);
+    enable_streams();
+}
+
+static STREAMS: AtomicBool = AtomicBool::new(false);
+
+/// Report why event subscriptions end, without the request lines. Also part of
+/// [`enable`].
+pub fn enable_streams() {
+    STREAMS.store(true, Ordering::Relaxed);
+}
+
+/// One line when an event subscription ends. The reason names the condition,
+/// never a session, payload or credential.
+pub(crate) fn stream_closed(reason: &str, native: bool) {
+    if STREAMS.load(Ordering::Relaxed) {
+        eprintln!(
+            "canharbor: event stream closed: {reason} ({})",
+            if native { "local client" } else { "browser" }
+        );
+    }
 }
 
 /// `None` for successful reads; otherwise one line without a trailing newline.

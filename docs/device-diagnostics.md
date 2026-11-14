@@ -43,3 +43,16 @@ receipt identifiers, query strings, request and response bodies, frame payloads
 and credentials are not written. Successful reads are omitted because clients
 poll them. The log is off by default, is not persisted by the service, and does
 not cover backend or device I/O.
+
+The same option reports why an event subscription ended:
+
+```text
+canharbor: event stream closed: events not written within 2 s (local client)
+```
+
+The reasons are: the client closed or disconnected, a keep-alive went
+unanswered for 30 seconds, a message could not be written within 2 seconds
+because the client was not reading, the session no longer exists, the browser
+session ended, or acquisition ended. A subscriber that stops reading while
+traffic continues is disconnected by the 2-second rule; on macOS the local
+socket buffer is 8 KiB, so that happens quickly.
