@@ -92,19 +92,27 @@ impl Frame {
             Self::ClassicRemote { .. } => &[],
         }
     }
+    /// The data length code. For a frame that passed a constructor or
+    /// [`Frame::validate`] this is exact.
+    ///
+    /// The variants are public, so a value can be built with a length no
+    /// constructor accepts. For such a value this returns the smallest code
+    /// whose length covers the payload, at most 15, instead of panicking: the
+    /// result is used on paths that format received frames, where a defect in
+    /// a backend must not take the caller down. Anything that transmits calls
+    /// `validate` first and rejects the frame.
     pub fn dlc(&self) -> u8 {
         match self {
-            Self::ClassicRemote { dlc, .. } => *dlc,
+            Self::ClassicRemote { dlc, .. } => (*dlc).min(15),
             _ => match self.data().len() {
                 n @ 0..=8 => n as u8,
-                12 => 9,
-                16 => 10,
-                20 => 11,
-                24 => 12,
-                32 => 13,
-                48 => 14,
-                64 => 15,
-                _ => unreachable!("validated frame"),
+                9..=12 => 9,
+                13..=16 => 10,
+                17..=20 => 11,
+                21..=24 => 12,
+                25..=32 => 13,
+                33..=48 => 14,
+                _ => 15,
             },
         }
     }
@@ -282,6 +290,45 @@ mod tests {
         assert!(Frame::classic(id, vec![0; 9]).is_err());
         assert!(Frame::remote(id, 9).is_err());
         assert_eq!(Frame::remote(id, 8).unwrap().data(), &[]);
+    }
+    #[test]
+    fn dlc_is_exact_for_valid_frames_and_never_panics() {
+        let id = CanId::new(0x123, false).unwrap();
+        for (length, code) in [
+            (0, 0),
+            (8, 8),
+            (12, 9),
+            (16, 10),
+            (20, 11),
+            (24, 12),
+            (32, 13),
+            (48, 14),
+            (64, 15),
+        ] {
+            assert_eq!(Frame::fd(id, vec![0; length], false).unwrap().dlc(), code);
+        }
+        assert_eq!(Frame::classic(id, vec![0; 5]).unwrap().dlc(), 5);
+        assert_eq!(Frame::remote(id, 4).unwrap().dlc(), 4);
+        // Values built from the variants directly, with lengths no constructor
+        // accepts: the smallest covering code, and still rejected by validate.
+        for (length, code) in [(9, 9), (13, 10), (33, 14), (49, 15), (65, 15), (4096, 15)] {
+            let frame = Frame::FdData {
+                id,
+                data: vec![0; length],
+                brs: false,
+            };
+            assert_eq!(frame.dlc(), code, "{length}");
+            assert!(frame.validate().is_err());
+        }
+        let classic = Frame::ClassicData {
+            id,
+            data: vec![0; 9],
+        };
+        assert_eq!(classic.dlc(), 9);
+        assert!(classic.validate().is_err());
+        let remote = Frame::ClassicRemote { id, dlc: 200 };
+        assert_eq!(remote.dlc(), 15);
+        assert!(remote.validate().is_err());
     }
 }
 
