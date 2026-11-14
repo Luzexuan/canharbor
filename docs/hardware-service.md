@@ -1,5 +1,9 @@
 # Explicit hardware service access
 
+gs_usb is the primary hardware target. SLCAN, PEAK and Kvaser are experimental.
+No adapter has been validated; the tiers, the validation procedure and recorded
+results are in [hardware validation](hardware-validation.md).
+
 The CLI can compose the virtual bus with one explicitly selected gs_usb device.
 No USB device is opened by default. Enumeration alone sends no gs_usb commands:
 

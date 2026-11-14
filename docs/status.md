@@ -19,6 +19,9 @@ behavior and may include work that has not been implemented.
   read-only recovery, FD/RTT, adaptive plans and multi-host coordination.
 - Opt-in gs_usb, SLCAN, PEAK and Kvaser backends. Native vendor backends require
   explicit library and channel selection; discovery is not compatibility proof.
+  gs_usb is the primary hardware target; SLCAN, PEAK and Kvaser are experimental.
+  See [hardware validation](hardware-validation.md) for the tiers, the
+  validation procedure and the results recorded so far (none).
 
 See the [README](../README.md) for build instructions and feature documentation.
 

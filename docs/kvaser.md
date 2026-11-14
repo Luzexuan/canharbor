@@ -1,5 +1,8 @@
 # Kvaser backend
 
+> Experimental backend: tested against simulated transports or libraries only.
+> See [hardware validation](hardware-validation.md) for the support tiers.
+
 The optional `kvaser` CLI feature connects the existing service, CLI and Web UI
 to the open-source **libKvaserUSB 1.0.2** C API. This is not Kvaser's closed-source
 CANlib. CANHarbor neither bundles a driver binary nor installs a replacement

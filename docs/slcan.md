@@ -1,5 +1,8 @@
 # SLCAN implementation
 
+> Experimental backend: tested against simulated transports or libraries only.
+> See [hardware validation](hardware-validation.md) for the support tiers.
+
 The serial backend has two explicitly selected firmware profiles. No ports are
 automatically probed and no firmware dialect is inferred from a version string.
 Both profiles support standard/extended Classic CAN data and RTR frames.
