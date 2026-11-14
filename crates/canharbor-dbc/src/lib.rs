@@ -4,10 +4,11 @@
 //!
 //! Supported: `BO_` messages, `SG_` signals with either byte order, signed and
 //! unsigned integers, IEEE floats declared by `SIG_VALTYPE_`, linear scaling,
-//! units, and simple multiplexing (`M` selector with `m<N>` signals).
+//! units, value tables (`VAL_`), and simple multiplexing (`M` selector with
+//! `m<N>` signals).
 //!
-//! Not interpreted: value tables, attributes, comments, signal groups and
-//! extended multiplexing. A file that uses extended multiplexing
+//! Not interpreted: attributes, comments, signal groups and extended
+//! multiplexing. A file that uses extended multiplexing
 //! (`SG_MUL_VAL_` or an `m<N>M` signal) is rejected, because decoding it with
 //! the simple rules would report wrong values.
 use std::collections::HashMap;
@@ -46,6 +47,8 @@ enum Mux {
     Selector,
     Selected(u64),
 }
+/// A `VAL_` record: message key, signal name and the names of raw values.
+type Table = ((u32, bool), String, Vec<(i128, String)>);
 #[derive(Debug, Clone)]
 struct Signal {
     name: String,
@@ -57,6 +60,9 @@ struct Signal {
     offset: f64,
     unit: String,
     mux: Mux,
+    /// Names for raw values, from a `VAL_` record. Wide enough for negative
+    /// signed values and the whole unsigned 64-bit range.
+    labels: Vec<(i128, String)>,
 }
 #[derive(Debug, Clone)]
 struct Message {
@@ -84,6 +90,8 @@ pub struct Decoded<'a> {
     pub name: &'a str,
     pub value: Value,
     pub unit: &'a str,
+    /// The name the database gives this raw value, if any.
+    pub label: Option<&'a str>,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecodedMessage<'a> {
@@ -114,13 +122,35 @@ fn windows_1252(byte: u8) -> char {
 /// The contents of the first quoted string in `text`. A backslash escapes the
 /// character after it, so `"\""` is a unit of one double quote.
 fn quoted(text: &str) -> Option<String> {
-    let mut characters = text.chars().skip_while(|c| *c != '"').skip(1);
+    take_quoted(text).map(|(value, _)| value)
+}
+/// Like [`quoted`], also returning the text after the closing quote.
+fn take_quoted(text: &str) -> Option<(String, &str)> {
+    let start = text.find('"')? + 1;
     let mut value = String::new();
+    let mut characters = text[start..].char_indices();
     loop {
         match characters.next()? {
-            '"' => return Some(value),
-            '\\' => value.push(characters.next()?),
-            other => value.push(other),
+            (at, '"') => return Some((value, &text[start + at + 1..])),
+            (_, '\\') => value.push(characters.next()?.1),
+            (_, other) => value.push(other),
+        }
+    }
+}
+/// The next whitespace-delimited field and the text after it.
+fn field(text: &str) -> Option<(&str, &str)> {
+    let text = text.trim_start();
+    let end = text.find(char::is_whitespace)?;
+    Some((&text[..end], &text[end..]))
+}
+/// The raw value as the integer a value table refers to.
+fn raw_integer(raw: u64, signal: &Signal) -> Option<i128> {
+    match signal.kind {
+        Kind::Float => None,
+        Kind::Unsigned => Some(i128::from(raw)),
+        Kind::Signed => {
+            let shift = 64 - u32::from(signal.length);
+            Some(i128::from((raw << shift) as i64 >> shift))
         }
     }
 }
@@ -193,6 +223,7 @@ impl Database {
         let mut database = Self::default();
         let mut current: Option<(u32, bool)> = None;
         let mut floats: Vec<(usize, (u32, bool), String, u8)> = Vec::new();
+        let mut tables: Vec<Table> = Vec::new();
         let mut signals = 0usize;
         // Comments and attribute strings may span lines and contain text that
         // looks like a record; skip everything inside an open string.
@@ -330,6 +361,7 @@ impl Database {
                         offset,
                         unit,
                         mux,
+                        labels: Vec::new(),
                     });
             } else if keyword == "SIG_VALTYPE_" {
                 let mut fields = rest
@@ -350,6 +382,47 @@ impl Database {
                     name.to_owned(),
                     kind,
                 ));
+            } else if keyword == "VAL_" {
+                // `VAL_ <message> <signal> <value> "<name>" ... ;`. Tables for
+                // environment variables have no message identifier. A record
+                // that does not end on this line, inside a name or between
+                // fields, is left out whole rather than read in part.
+                // Fields may be separated by any run of whitespace.
+                let Some((message, after)) = field(rest) else {
+                    continue;
+                };
+                let (Ok(raw), Some((name, mut pairs))) = (message.parse::<u32>(), field(after))
+                else {
+                    continue;
+                };
+                if in_string || !rest.trim_end().ends_with(';') {
+                    continue;
+                }
+                let mut labels = Vec::new();
+                loop {
+                    pairs = pairs.trim_start();
+                    if pairs.is_empty() || pairs.starts_with(';') {
+                        break;
+                    }
+                    let (value, after) = pairs
+                        .split_once(char::is_whitespace)
+                        .ok_or(bad("value table entry"))?;
+                    let value = value
+                        .parse::<i128>()
+                        .ok()
+                        .filter(|value| {
+                            (i128::from(i64::MIN)..=i128::from(u64::MAX)).contains(value)
+                        })
+                        .ok_or(bad("value table value"))?;
+                    let (label, after) = take_quoted(after).ok_or(bad("value table name"))?;
+                    labels.push((value, label));
+                    pairs = after;
+                }
+                tables.push((
+                    (raw & 0x1fff_ffff, raw & 0x8000_0000 != 0),
+                    name.to_owned(),
+                    labels,
+                ));
             } else if keyword == "SG_MUL_VAL_" {
                 return Err(Error::Unsupported {
                     line: number,
@@ -358,6 +431,15 @@ impl Database {
             } else if !keyword.is_empty() && keyword != "CM_" {
                 // Any other record ends the signal list of the current message.
                 current = None;
+            }
+        }
+        for (key, name, labels) in tables {
+            if let Some(signal) = database
+                .messages
+                .get_mut(&key)
+                .and_then(|m| m.signals.iter_mut().find(|s| s.name == name))
+            {
+                signal.labels = labels;
             }
         }
         for (line, key, name, kind) in floats {
@@ -426,6 +508,13 @@ impl Database {
                     name: &signal.name,
                     value: physical(raw, signal),
                     unit: &signal.unit,
+                    label: raw_integer(raw, signal).and_then(|value| {
+                        signal
+                            .labels
+                            .iter()
+                            .find(|(labelled, _)| *labelled == value)
+                            .map(|(_, label)| label.as_str())
+                    }),
                 }),
                 None => decoded.truncated += 1,
             }

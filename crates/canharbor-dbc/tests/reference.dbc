@@ -1294,6 +1294,11 @@ BO_ 1900 MIXED: 8 ECU
  SG_ Flag : 16|1@1+ (1,0) [0|0] "" ECU
  SG_ Be32 : 39|32@0- (0.001,0) [0|0] "V" ECU
 
+BO_ 1901 CHOICES: 2 ECU
+ SG_ Gear : 0|4@1+ (1,0) [0|0] "" ECU
+ SG_ Mode : 4|4@1- (1,0) [0|0] "" ECU
+ SG_ Scaled : 8|8@1+ (0.5,0) [0|0] "" ECU
+
 BO_ 2000 MUX: 8 ECU
  SG_ Sel M : 0|4@1+ (1,0) [0|0] "" ECU
  SG_ A m0 : 8|16@1- (0.1,0) [0|0] "a" ECU
@@ -1304,6 +1309,10 @@ CM_ BO_ 256 "first line
 BO_ 999 Fake: 8 ECU
  SG_ Bogus : 0|8@1+ (1,0) [0|0] \"x\" ECU
 last";
+VAL_ 1901 Gear 0 "Park" 1 "Reverse" 2 "Neutral" 3 "Drive" ;
+VAL_ 1901 Mode -1 "Invalid" 0 "Off" 1 "Say \"on\"" ;
+VAL_ 1901 Scaled 2 "Two raw" 255 "Top" ;
+VAL_ EnvSwitch 0 "Off" 1 "On" ;
 SIG_VALTYPE_ 2550136842 S10_0 : 1;
 SIG_VALTYPE_ 275 S19_0 : 1;
 SIG_VALTYPE_ 288 S32_0 : 1;
