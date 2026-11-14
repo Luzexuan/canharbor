@@ -2,7 +2,7 @@
 
 > An open CAN/CAN FD platform for macOS, Linux and Windows, built in Rust.
 
-CANHarbor provides a local Rust service, a `canharbor` CLI, and a browser workbench. The default service provides **two simulated channels on one virtual CAN bus**. Hardware access is opt-in through gs_usb, SLCAN, PEAK or Kvaser backends; no real-adapter compatibility has been verified. See [hardware access](docs/hardware-service.md).
+CANHarbor provides a local Rust service, a `canharbor` CLI, and a browser workbench. The default service provides **two simulated channels on one virtual CAN bus**. Hardware access is opt-in. gs_usb is the primary hardware target; SLCAN, PEAK and Kvaser are experimental. No real-adapter compatibility has been verified yet. See [hardware access](docs/hardware-service.md) and [hardware validation](docs/hardware-validation.md).
 
 ## Start here
 

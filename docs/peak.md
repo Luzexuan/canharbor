@@ -1,5 +1,8 @@
 # Optional PEAK adapter
 
+> Experimental backend: tested against simulated transports or libraries only.
+> See [hardware validation](hardware-validation.md) for the support tiers.
+
 The `peak` CLI feature integrates the open-source **libPeakUSB 1.0.2** C API
 through `canharbor-peak` and the shared native driver worker. The supported source
 snapshot is recorded in [peak-provenance.json](peak-provenance.json). No vendor
