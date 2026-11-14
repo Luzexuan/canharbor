@@ -271,6 +271,7 @@ enum Command {
 enum ExportFormat {
     Candump,
     Asc,
+    Blf,
 }
 #[derive(Subcommand)]
 enum CaptureCommand {
@@ -287,14 +288,14 @@ enum CaptureCommand {
         #[arg(help = "Destination file path; an existing file is not replaced")]
         output: PathBuf,
         #[arg(long, value_enum, default_value_t = ExportFormat::Candump)]
-        #[arg(help = "candump: can-utils log; asc: Vector ASCII log")]
+        #[arg(help = "candump: can-utils log; asc: Vector ASCII log; blf: Vector binary log")]
         format: ExportFormat,
         #[arg(long, default_value = "can0")]
         #[arg(help = "candump only: interface name written on every log line")]
         interface: String,
         #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..))]
-        #[arg(help = "asc only: channel number written on every log line")]
-        asc_channel: u8,
+        #[arg(help = "asc and blf: channel number written with every frame")]
+        channel_number: u8,
     },
     /// Start a bounded recording of an already running session
     Start {
@@ -551,7 +552,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 output,
                 format,
                 interface,
-                asc_channel,
+                channel_number,
             },
     } = &args.command
     {
@@ -567,7 +568,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let writer = std::io::BufWriter::new(&log);
         let result = match format {
             ExportFormat::Candump => canharbor_replay::export_candump(file, writer, interface),
-            ExportFormat::Asc => canharbor_replay::export_asc(file, writer, *asc_channel),
+            ExportFormat::Asc => canharbor_replay::export_asc(file, writer, *channel_number),
+            ExportFormat::Blf => canharbor_replay::export_blf(file, writer, *channel_number),
         }
         .map_err(|e| match e {
             canharbor_replay::Error::Io(error) => Box::new(error) as Box<dyn std::error::Error>,
