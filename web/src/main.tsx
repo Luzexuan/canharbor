@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { formatNumber, formatTime } from "./i18n/format";
+import { formatNumber } from "./i18n/format";
 import { CODE_SLOT, aroundCode } from "./i18n/code";
 import { FrameTable, type FrameBusEvent } from "./FrameTable";
-import { DbcDatabase, DbcError } from "./dbc";
+import { AggregateTable } from "./AggregateTable";
+import { BitrateSettings } from "./BitrateSettings";
+import { BusDiagnostics, type BusDiagnostic } from "./BusDiagnostics";
+import { useDbc } from "./DbcControl";
+import { Sidebar } from "./Sidebar";
+import { StatusDetails } from "./StatusDetails";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -40,7 +45,6 @@ import {
   uiMessage,
   type UiMessage,
 } from "./i18n/messages";
-import { LanguageSwitcher } from "./LanguageSwitcher";
 import { aggregateFrames, MAX_AGGREGATES, type Aggregate } from "./monitor";
 import { OfflineCapturePanel } from "./OfflineCapturePanel";
 import { StressPanel } from "./StressPanel";
@@ -156,42 +160,7 @@ function App() {
   >("disconnected");
   const [streamRevision, setStreamRevision] = useState(0);
   const [idFilter, setIdFilter] = useState(draftString("idFilter", ""));
-  // Display only, and kept in this page: a reload starts without a database.
-  const [dbc, setDbc] = useState<{
-    name: string;
-    database: DbcDatabase;
-  } | null>(null);
-  const [dbcError, setDbcError] = useState("");
-  async function loadDbc(file: File) {
-    setDbcError("");
-    try {
-      // Checked before reading, so an oversized file is never loaded.
-      if (file.size > 16 * 1024 * 1024) throw new DbcError("too_large", 0, "");
-      setDbc({
-        name: file.name,
-        database: DbcDatabase.parse(new Uint8Array(await file.arrayBuffer())),
-      });
-    } catch (error) {
-      // A file that cannot be used replaces nothing.
-      setDbcError(
-        !(error instanceof DbcError)
-          ? text("main:the_dbc_file_could_not_be_read")
-          : error.kind === "too_large"
-            ? text("main:the_dbc_file_exceeds_16_mib_or_the_signal_limit")
-            : error.line === 0
-              ? text("main:dbc_not_supported_value", { reason: error.reason })
-              : error.kind === "unsupported"
-                ? text("main:dbc_line_not_supported_value", {
-                    line: error.line,
-                    reason: error.reason,
-                  })
-                : text("main:dbc_line_not_read_value", {
-                    line: error.line,
-                    reason: error.reason,
-                  }),
-      );
-    }
-  }
+  const dbc = useDbc();
   const [directionFilter, setDirectionFilter] = useState(
     ["all", "rx", "tx"].includes(draftString("directionFilter", "all"))
       ? draftString("directionFilter", "all")
@@ -211,9 +180,7 @@ function App() {
     groups: 0,
     paused: 0,
   });
-  const [diagnostics, setDiagnostics] = useState<
-    Extract<BusEvent, { type: "bus_diagnostic" }>[]
-  >([]);
+  const [diagnostics, setDiagnostics] = useState<BusDiagnostic[]>([]);
   const [gaps, setGaps] = useState(0n);
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
@@ -745,67 +712,13 @@ function App() {
   }
   return (
     <div className="app">
-      <aside className="sidebar">
-        <a className="brand" href="/">
-          CAN<span>Harbor</span>
-          <small>{text("main:local_workbench")}</small>
-        </a>
-        <div className="stage">{text("main:local_can_workbench")}</div>
-        <nav>
-          <a
-            href="#live"
-            className={workspace === "live" ? "active" : ""}
-            onClick={(e) => {
-              e.preventDefault();
-              navigate("live");
-            }}
-          >
-            {text("main:workspace")} <span>01</span>
-          </a>
-          <a href="#devices" onClick={() => setWorkspace("live")}>
-            {text("main:devices")} <span>{devices.length}</span>
-          </a>
-          <a
-            href="#capture"
-            className={workspace === "capture" ? "active" : ""}
-            onClick={(e) => {
-              e.preventDefault();
-              navigate("capture");
-            }}
-          >
-            {t("recordings")}
-          </a>
-          <a
-            href="#offline"
-            className={workspace === "offline" ? "active" : ""}
-            onClick={(e) => {
-              e.preventDefault();
-              navigate("offline");
-            }}
-          >
-            {t("offline")}
-          </a>
-          <a
-            href="#stress"
-            className={workspace === "stress" ? "active" : ""}
-            onClick={(e) => {
-              e.preventDefault();
-              navigate("stress");
-            }}
-          >
-            {t("stress")}
-          </a>
-          <a href="#about">{t("about")}</a>
-        </nav>
-        <LanguageSwitcher auth={auth} />
-        <div className="side-footer">
-          <span className={`dot ${auth ? "connected" : ""}`} />
-          <span>
-            {auth ? text("main:browser_paired") : text("main:pairing_required")}
-          </span>
-          <p>{text("main:local_access_no_cloud_connection")}</p>
-        </div>
-      </aside>
+      <Sidebar
+        workspace={workspace}
+        deviceCount={devices.length}
+        auth={auth}
+        onNavigate={navigate}
+        onShowDevices={() => setWorkspace("live")}
+      />
       <main id="workspace">
         <header>
           <div>
@@ -886,45 +799,7 @@ function App() {
             </button>
           ))}
         </nav>
-        {diagnostics.length > 0 && (
-          <section aria-label={text("main:bus_diagnostics")}>
-            <h2>{text("main:bus_diagnostics")}</h2>
-            <p role="status">
-              {text("main:recent_bus_diagnostic_events_value", {
-                number: diagnostics.length,
-              })}
-            </p>
-            <details>
-              <summary>{text("main:diagnostic_details")}</summary>
-              <ul>
-                {diagnostics.map((item) => (
-                  <li key={item.sequence}>
-                    {item.overflow
-                      ? text(
-                          "main:receive_overflow_observations_may_be_missing",
-                        )
-                      : item.error_classes & 0x40
-                        ? text(
-                            "main:bus_off_inspect_the_bus_before_explicitly_restarting",
-                          )
-                        : text(
-                            "main:bus_diagnostic_inspect_adapter_details",
-                          )}{" "}
-                    ·{" "}
-                    {text("main:classes_value", {
-                      classes: item.error_classes.toString(16),
-                    })}{" "}
-                    · {item.raw_data_hex}
-                    {item.overflow
-                      ? ` · ${text("main:receive_loss_reported_count_unknown")}`
-                      : ""}{" "}
-                    · {item.timestamp_quality}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          </section>
-        )}
+        <BusDiagnostics diagnostics={diagnostics} />
         {!!error && (
           <ErrorRecovery
             error={error}
@@ -1118,128 +993,21 @@ function App() {
                 </option>
               </select>
             </label>
-            <div className="fixed-setting">
-              <label>
-                {text("main:nominal_bitrate")}
-                <input
-                  aria-label={text("main:nominal_bitrate")}
-                  aria-invalid={!validNominal}
-                  aria-describedby={!validNominal ? "nominal-error" : undefined}
-                  type="number"
-                  list="nominal-rates"
-                  min="1"
-                  max="10000000"
-                  disabled={selectedDevice?.simulated}
-                  value={selectedDevice?.simulated ? 500000 : nominalBitrate}
-                  onChange={(e) => setNominalBitrate(Number(e.target.value))}
-                />
-              </label>
-              <datalist id="nominal-rates">
-                {(capabilities?.fixed_nominal_bitrates.length
-                  ? capabilities.fixed_nominal_bitrates
-                  : [125000, 250000, 500000, 1000000]
-                ).map((rate) => (
-                  <option key={rate} value={rate}>
-                    {text("main:kbit_s_value", { value: rate / 1000 })}
-                  </option>
-                ))}
-              </datalist>
-              {!validNominal && (
-                <p id="nominal-error">
-                  {text(
-                    "main:enter_a_whole_nominal_bitrate_from_1_to_10000000",
-                  )}
-                </p>
-              )}
-              <label>
-                <input
-                  type="checkbox"
-                  checked={fdEnabled}
-                  disabled={!selectedChannel?.fd}
-                  onChange={(e) => setFdEnabled(e.target.checked)}
-                />
-                {text("main:enable_can_fd")}
-              </label>
-              {fdEnabled && (
-                <label>
-                  {text("main:fd_data_bitrate")}
-                  <input
-                    aria-label={text("main:fd_data_bitrate")}
-                    aria-invalid={!validData}
-                    aria-describedby={
-                      !validData ? "data-bitrate-error" : undefined
-                    }
-                    type="number"
-                    list="data-rates"
-                    min="1"
-                    max="20000000"
-                    disabled={selectedDevice?.simulated}
-                    value={selectedDevice?.simulated ? 2000000 : dataBitrate}
-                    onChange={(e) => setDataBitrate(Number(e.target.value))}
-                  />
-                </label>
-              )}
-              <datalist id="data-rates">
-                {(capabilities?.fixed_data_bitrates.length
-                  ? capabilities.fixed_data_bitrates
-                  : [1000000, 2000000, 4000000, 8000000]
-                ).map((rate) => (
-                  <option key={rate} value={rate}>
-                    {text("main:mbit_s_value", { value: rate / 1000000 })}
-                  </option>
-                ))}
-              </datalist>
-              {rateIssue && <p role="alert">{rateIssue}</p>}
-              {!!capabilityError && (
-                <p>
-                  {capabilityError instanceof Error
-                    ? capabilityError.message
-                    : String(capabilityError)}
-                </p>
-              )}
-              {capabilities && (
-                <details>
-                  <summary>{text("main:device_timing_capabilities")}</summary>
-                  <p>
-                    {capabilities.fixed_nominal_bitrates.length
-                      ? text("main:supported_nominal_rates_value_bit_s", {
-                          value: capabilities.fixed_nominal_bitrates.join(", "),
-                        })
-                      : text(
-                          "main:suggested_rates_are_not_a_compatibility_claim_the_device",
-                        )}
-                  </p>
-                  {capabilities.nominal_timing && (
-                    <p>
-                      {text("main:nominal_timing_value", {
-                        ...capabilities.nominal_timing,
-                      })}
-                    </p>
-                  )}
-                  {fdEnabled && (
-                    <p>
-                      {capabilities.fixed_data_bitrates.length
-                        ? text("main:supported_fd_data_rates_value_bit_s", {
-                            value: capabilities.fixed_data_bitrates.join(", "),
-                          })
-                        : text(
-                            "main:fd_rates_require_device_timing_validation",
-                          )}
-                    </p>
-                  )}
-                </details>
-              )}
-              {!validData && (
-                <p id="data-bitrate-error">
-                  {text("main:enter_a_whole_data_bitrate_from_1_to_20000000")}
-                </p>
-              )}
-              <small>
-                {selectedDevice?.simulated
-                  ? text("main:virtual_bus_fixed_500_kbit_s_2_mbit_s")
-                  : text("main:hardware_compatibility_has_not_been_verified")}
-              </small>
-            </div>
+            <BitrateSettings
+              simulated={selectedDevice?.simulated}
+              fdAvailable={!!selectedChannel?.fd}
+              capabilities={capabilities}
+              capabilityError={capabilityError}
+              nominalBitrate={nominalBitrate}
+              onNominalBitrate={setNominalBitrate}
+              validNominal={validNominal}
+              fdEnabled={fdEnabled}
+              onFdEnabled={setFdEnabled}
+              dataBitrate={dataBitrate}
+              onDataBitrate={setDataBitrate}
+              validData={validData}
+              rateIssue={rateIssue}
+            />
             <button
               disabled={
                 !auth || busy || !selectedChannel || !!session || !configValid
@@ -1341,52 +1109,18 @@ function App() {
             <span className="session-state">
               {session ? stateText(session.state) : text("main:no_session")}
             </span>
-            <details
-              className="status-details"
-              open={queryStale || renewalUnknown}
-            >
-              <summary>{text("main:connection_and_control_details")}</summary>
-              <p data-testid="channel-status-certainty">
-                {queryStale || !lastQuery
-                  ? text(
-                      "main:current_channel_state_unknown_last_reported_value_a_disconnected",
-                      { value: stateText(session?.state ?? "unavailable") },
-                    )
-                  : text("main:last_reported_channel_state_value", {
-                      value: stateText(session?.state ?? "unavailable"),
-                    })}
-              </p>
-              <p>
-                {text("main:last_query_and_renewal_value", {
-                  query: lastQuery
-                    ? formatTime(new Date(lastQuery))
-                    : text("main:not_yet_confirmed"),
-                  renewal: lastRenewal
-                    ? formatTime(new Date(lastRenewal))
-                    : text("main:not_yet_confirmed"),
-                })}
-              </p>
-              {selectedId && streamState === "disconnected" && (
-                <p>
-                  {text(
-                    "main:event_stream_disconnected_the_channel_may_remain_running_while",
-                  )}
-                </p>
-              )}
-              {renewalUnknown && (
-                <p role="alert">
-                  {text(
-                    "main:control_renewal_outcome_unknown_renewal_is_paused_the_channel",
-                  )}
-                </p>
-              )}
-              <button
-                disabled={connectionBusy || !auth}
-                onClick={() => void checkStatus()}
-              >
-                {text("main:check_final_status")}
-              </button>
-            </details>
+            <StatusDetails
+              state={session?.state}
+              queryStale={queryStale}
+              lastQuery={lastQuery}
+              lastRenewal={lastRenewal}
+              renewalUnknown={renewalUnknown}
+              streamDisconnected={
+                !!selectedId && streamState === "disconnected"
+              }
+              checkDisabled={connectionBusy || !auth}
+              onCheck={() => void checkStatus()}
+            />
             <span className="control-state">
               {controls
                 ? text("main:you_have_control")
@@ -1663,36 +1397,9 @@ function App() {
                   <option value="tx">TX</option>
                 </select>
               </label>
-              <label>
-                {text("main:dbc_file_optional")}
-                <input
-                  type="file"
-                  accept=".dbc"
-                  onChange={(e) => {
-                    const selected = e.target.files?.[0];
-                    if (selected) void loadDbc(selected);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
+              {dbc.input}
             </div>
-            {dbcError && <p role="alert">{dbcError}</p>}
-            {dbc && (
-              <p data-testid="dbc-status">
-                {text("main:dbc_loaded_value", {
-                  name: dbc.name,
-                  messages: dbc.database.messages,
-                })}{" "}
-                <button
-                  onClick={() => {
-                    setDbc(null);
-                    setDbcError("");
-                  }}
-                >
-                  {text("main:remove_dbc")}
-                </button>
-              </p>
-            )}
+            {dbc.status}
             <p id="id-filter-help">
               {text("main:id_filter_help_value", {
                 rows: MAX_ROWS,
@@ -1712,55 +1419,13 @@ function App() {
               })}
             </p>
             {monitorView === "ids" && (
-              <div className="table-scroll aggregate-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{text("main:id_hex")}</th>
-                      <th>{text("main:width")}</th>
-                      <th>{text("main:direction")}</th>
-                      <th>{text("main:type")}</th>
-                      <th>{text("main:observed_count")}</th>
-                      <th>{text("main:latest_data_hex")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleAggregates.map((group) => (
-                      <tr key={group.key}>
-                        <td>
-                          {group.latest.frame.id.toString(16).toUpperCase()}
-                        </td>
-                        <td>
-                          {group.latest.frame.extended
-                            ? text("main:29_bit")
-                            : text("main:11_bit")}
-                        </td>
-                        <td>{group.latest.direction.toUpperCase()}</td>
-                        <td>{group.latest.frame.kind}</td>
-                        <td>{formatNumber(group.count)}</td>
-                        <td>
-                          {group.latest.frame.data_hex
-                            .match(/.{2}/g)
-                            ?.join(" ") || "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!visibleAggregates.length && (
-                  <p>
-                    {text(
-                      "main:no_id_groups_match_counts_start_at_subscription_or",
-                    )}
-                  </p>
-                )}
-              </div>
+              <AggregateTable groups={visibleAggregates} />
             )}
             <FrameTable
               rows={visibleRows}
               origin={elapsedOrigin.current}
               hidden={monitorView !== "frames"}
-              database={dbc?.database}
+              database={dbc.database}
             >
               {!!rows.length && !visibleRows.length && (
                 <div className="empty">
