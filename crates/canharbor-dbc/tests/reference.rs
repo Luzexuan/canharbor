@@ -225,6 +225,11 @@ fn value_tables_are_optional_and_strictly_parsed() {
         label("VAL_\t1 S -1 \"Invalid\"\t0 \"Off\"\n", &data)[0].as_deref(),
         Some("Invalid")
     );
+    // Runs of spaces and tabs between any two fields.
+    assert_eq!(
+        label("VAL_  1 \t S   -1  \"Invalid\"   0\t\"Off\"  ;\n", &data)[0].as_deref(),
+        Some("Invalid")
+    );
     // A float signal has no integer raw value to name.
     assert_eq!(label("VAL_ 1 F 1 \"One\" ;\n", &data)[1], None);
     // Tables for unknown signals, other messages and environment variables are ignored.

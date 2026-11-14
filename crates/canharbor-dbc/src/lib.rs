@@ -136,6 +136,12 @@ fn take_quoted(text: &str) -> Option<(String, &str)> {
         }
     }
 }
+/// The next whitespace-delimited field and the text after it.
+fn field(text: &str) -> Option<(&str, &str)> {
+    let text = text.trim_start();
+    let end = text.find(char::is_whitespace)?;
+    Some((&text[..end], &text[end..]))
+}
 /// The raw value as the integer a value table refers to.
 fn raw_integer(raw: u64, signal: &Signal) -> Option<i64> {
     match signal.kind {
@@ -379,10 +385,11 @@ impl Database {
                 // `VAL_ <message> <signal> <value> "<name>" ... ;`. Tables for
                 // environment variables have no message identifier, and a
                 // table whose text continues on the next line is left out.
-                let mut fields = rest.splitn(3, char::is_whitespace);
-                let message = fields.next().and_then(|id| id.parse::<u32>().ok());
-                let (Some(raw), Some(name), Some(mut pairs)) =
-                    (message, fields.next(), fields.next())
+                // Fields may be separated by any run of whitespace.
+                let Some((message, after)) = field(rest) else {
+                    continue;
+                };
+                let (Ok(raw), Some((name, mut pairs))) = (message.parse::<u32>(), field(after))
                 else {
                     continue;
                 };
