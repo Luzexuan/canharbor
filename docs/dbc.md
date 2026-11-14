@@ -13,6 +13,22 @@ change the subscription, the JSON output, recordings or anything that is
 transmitted. Frames without a matching message are printed unchanged. Standard
 and extended identifiers with the same number are different messages.
 
+## In the workbench
+
+The frame monitor has an optional **DBC file** control. With a file loaded, the
+recent-frames table gets a **Signals** column in the same layout as the CLI
+output. Frames already in the table are decoded as well, and a signal beyond
+the received payload is counted at the end of the cell.
+
+The file is read and decoded in the page. It is not sent to the service, is not
+stored, and has to be chosen again after a reload. A file that is rejected
+reports its line and leaves the previous database in place. The offline
+capture viewer and the by-identifier view do not show signals.
+
+The page uses its own implementation of the rules below
+(`web/src/dbc.ts`), kept in step with the Rust crate by running the same
+reference data and edge cases against both.
+
 ## Supported subset
 
 - `BO_` messages and `SG_` signals in either byte order, signed or unsigned,
@@ -52,3 +68,9 @@ floats, scaling, standard and extended identifiers and classic and CAN FD
 lengths, with six random payloads each. The reference files were generated for
 this project and contain no third-party database. No vendor DBC file or
 physical bus was used.
+
+`web/tests/dbc.spec.ts` runs the same reference files, and the edge cases of
+the Rust tests, against the page's decoder. One difference is intended: the
+page prints scaled values with JavaScript's number formatting, which switches
+to exponent notation for very large and very small magnitudes where the CLI
+does not.

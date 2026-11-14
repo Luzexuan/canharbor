@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { useState, type ReactNode } from "react";
 import type { BusEvent } from "./api";
+import { hexBytes, signalText, type DbcDatabase } from "./dbc";
 import { text } from "./i18n/messages";
 
 export type FrameBusEvent = Extract<BusEvent, { type: "frame_received" }>;
@@ -11,17 +12,20 @@ const ROW_OVERSCAN = 12;
  * The recent-frames table. Only the rows near the scroll position are
  * rendered; spacer rows keep the scroll height of the whole list, and all rows
  * have the same height. `origin` is the timestamp that elapsed times are
- * relative to. Children follow the table, for the empty states.
+ * relative to. With a `database`, a further column shows the decoded signals
+ * of the rendered rows. Children follow the table, for the empty states.
  */
 export function FrameTable({
   rows: visibleRows,
   origin,
   hidden,
+  database,
   children,
 }: {
   rows: FrameBusEvent[];
   origin: string | null;
   hidden: boolean;
+  database?: DbcDatabase | null;
   children?: ReactNode;
 }) {
   const [frameViewport, setFrameViewport] = useState({ top: 0, height: 480 });
@@ -38,6 +42,22 @@ export function FrameTable({
     visibleRows.length,
     firstRow + Math.ceil(frameViewport.height / rowHeight) + 2 * ROW_OVERSCAN,
   );
+  const columns = database ? 8 : 7;
+  const signals = (row: FrameBusEvent) => {
+    // Remote frames carry no data.
+    const decoded =
+      row.frame.kind === "classic_remote"
+        ? null
+        : database?.decode(
+            row.frame.id,
+            row.frame.extended,
+            hexBytes(row.frame.data_hex),
+          );
+    if (!decoded) return "—";
+    return decoded.truncated
+      ? `${signalText(decoded)} ${text("main:signals_beyond_the_payload_value", { number: decoded.truncated })}`
+      : signalText(decoded);
+  };
   return (
     <div
       className="table-scroll"
@@ -61,12 +81,13 @@ export function FrameTable({
             <th>{text("main:type")}</th>
             <th>DLC</th>
             <th>{text("main:data_hex")}</th>
+            {database && <th>{text("main:signals")}</th>}
           </tr>
         </thead>
         <tbody>
           {firstRow > 0 && (
             <tr className="row-spacer" aria-hidden="true">
-              <td colSpan={7} style={{ height: firstRow * rowHeight }} />
+              <td colSpan={columns} style={{ height: firstRow * rowHeight }} />
             </tr>
           )}
           {visibleRows.slice(firstRow, lastRow).map((row, offset) => (
@@ -113,12 +134,13 @@ export function FrameTable({
               </td>
               <td>{row.frame.dlc}</td>
               <td>{row.frame.data_hex.match(/.{2}/g)?.join(" ") || "—"}</td>
+              {database && <td className="frame-signals">{signals(row)}</td>}
             </tr>
           ))}
           {lastRow < visibleRows.length && (
             <tr className="row-spacer" aria-hidden="true">
               <td
-                colSpan={7}
+                colSpan={columns}
                 style={{
                   height: (visibleRows.length - lastRow) * rowHeight,
                 }}
