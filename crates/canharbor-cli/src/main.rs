@@ -267,6 +267,11 @@ enum Command {
         bitrate: u32,
     },
 }
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum ExportFormat {
+    Candump,
+    Asc,
+}
 #[derive(Subcommand)]
 enum CaptureCommand {
     /// Inspect a bounded local capture without contacting the service.
@@ -275,15 +280,21 @@ enum CaptureCommand {
         #[arg(long, default_value_t=100, value_parser=clap::value_parser!(u16).range(0..=500))]
         limit: u16,
     },
-    /// Convert a local capture to a can-utils log without contacting the service.
+    /// Convert a local capture to a text log without contacting the service.
     Export {
         input: PathBuf,
         #[arg(long)]
         #[arg(help = "Destination file path; an existing file is not replaced")]
         output: PathBuf,
+        #[arg(long, value_enum, default_value_t = ExportFormat::Candump)]
+        #[arg(help = "candump: can-utils log; asc: Vector ASCII log")]
+        format: ExportFormat,
         #[arg(long, default_value = "can0")]
-        #[arg(help = "Interface name written on every log line")]
+        #[arg(help = "candump only: interface name written on every log line")]
         interface: String,
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..))]
+        #[arg(help = "asc only: channel number written on every log line")]
+        asc_channel: u8,
     },
     /// Start a bounded recording of an already running session
     Start {
@@ -538,7 +549,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             CaptureCommand::Export {
                 input,
                 output,
+                format,
                 interface,
+                asc_channel,
             },
     } = &args.command
     {
@@ -551,18 +564,19 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         };
         let file = canharbor_platform::files::open_regular(input).map_err(invalid_input)?;
         let log = canharbor_platform::private::create_new(output)?;
-        let result =
-            canharbor_replay::export_candump(file, std::io::BufWriter::new(&log), interface)
-                .map_err(|e| match e {
-                    canharbor_replay::Error::Io(error) => {
-                        Box::new(error) as Box<dyn std::error::Error>
-                    }
-                    other => status::input(other.to_string()),
-                })
-                .and_then(|summary| {
-                    log.sync_all()?;
-                    Ok(summary)
-                });
+        let writer = std::io::BufWriter::new(&log);
+        let result = match format {
+            ExportFormat::Candump => canharbor_replay::export_candump(file, writer, interface),
+            ExportFormat::Asc => canharbor_replay::export_asc(file, writer, *asc_channel),
+        }
+        .map_err(|e| match e {
+            canharbor_replay::Error::Io(error) => Box::new(error) as Box<dyn std::error::Error>,
+            other => status::input(other.to_string()),
+        })
+        .and_then(|summary| {
+            log.sync_all()?;
+            Ok(summary)
+        });
         match result {
             Ok(summary) => print(serde_json::to_value(summary)?),
             Err(error) => {

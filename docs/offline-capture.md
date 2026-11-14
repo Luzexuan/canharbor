@@ -43,6 +43,45 @@ exported prefix is not mistaken for a full recording. Timestamps are not
 wall-clock time. The output has not been checked against other tools' parsers;
 tests compare it with the documented syntax only.
 
+## Export to a Vector ASCII log
+
+`canharbor capture export capture.ndjson --output capture.asc --format asc`
+writes the same frames as an ASC log. Validation, the JSON summary and the
+handling of the destination file are the same as for the can-utils log.
+
+```text
+date Sun Nov 15 10:00:00.123 2026
+base hex  timestamps absolute
+no internal events logged
+Begin Triggerblock Sun Nov 15 10:00:00.123 2026
+   0.000000 Start of measurement
+   0.000000 1  123             Rx   d 8 01 02 03 04 05 06 07 08
+   1.234567 1  7FF             Rx   r 4
+   2.469134 CANFD   1 Tx   1ABCDEF0x  ... 1 0 9 12 AA BB ...
+End TriggerBlock
+```
+
+Unlike the can-utils log, each line keeps the frame's direction. The channel
+number on every line is `--asc-channel` (default 1); a recording covers one
+channel.
+
+- The `date` is the recording's creation time in UTC. The format has no time
+  zone field, and readers generally take the date as local time.
+- Event times are seconds since the first event in the recording, from the
+  service's monotonic clock. They are offsets within the recording, not
+  offsets from the `date`: the first event is written at 0.000000 however long
+  after creation it arrived.
+- Raw DLC, timestamp quality and device timestamps are dropped. Diagnostic
+  events are skipped and counted, not written as `ErrorFrame` lines; gaps are
+  not marked.
+- CAN FD lines carry zero for the fields a recording does not hold (message
+  duration, bit count, CRC and bit timing).
+
+The layout follows the one python-can 4.6 writes, and a test reads the output
+back with python-can's reader. A CAN FD frame with no data is the one case that
+reader reports differently: it returns such a line as a remote frame. The
+output has not been opened in Vector's tools. BLF is not supported.
+
 The shared synthetic capture corpus covers Classic raw DLC, CAN FD BRS/ESI,
 64-bit precision, diagnostics, recoverable prefixes and invalid frames. Tests
 also use a three-byte reader, verify bounded previews over 1000 events, and

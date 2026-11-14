@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-use canharbor_replay::{export_candump, inspect};
+use canharbor_replay::{export_asc, export_candump, inspect};
 use serde_json::Value;
 use std::io::{Cursor, Read};
 fn fixtures() -> Value {
@@ -135,4 +135,114 @@ fn candump_export_writes_frames_and_reports_what_it_skipped() {
         let capture = bytes(&fixtures["valid"][0]["records"]);
         assert!(export_candump(capture.as_slice(), Vec::new(), interface).is_err());
     }
+}
+#[test]
+fn asc_export_keeps_direction_and_counts_time_from_the_first_event() {
+    let fixtures = fixtures();
+    let base = &fixtures["valid"][0]["records"];
+    let mut header = base[0].clone();
+    // 2026-11-15 10:00:00.123 UTC, a Sunday.
+    header["created_unix_ms"] = "1794736800123".into();
+    let mut records = vec![header];
+    for (i, (kind, id, extended, data, dlc, direction, brs, esi)) in [
+        (
+            "classic_data",
+            0x123,
+            false,
+            "0102030405060708",
+            8,
+            "rx",
+            false,
+            false,
+        ),
+        ("classic_data", 0x1abc_def0, true, "", 0, "tx", false, false),
+        ("classic_remote", 0x7ff, false, "", 4, "rx", false, false),
+        ("fd_data", 0x12, false, "0a", 1, "tx", true, true),
+        (
+            "fd_data",
+            0x100,
+            false,
+            "bbbbbbbbbbbbbbbbbbbbbbbb",
+            9,
+            "rx",
+            true,
+            false,
+        ),
+        ("fd_data", 0x101, false, "", 0, "rx", false, false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut e = base[1].clone();
+        e["event"]["sequence"] = (i + 1).to_string().into();
+        e["event"]["host_monotonic_ns"] = (5_000_000_000 + i as u64 * 1_234_567_000)
+            .to_string()
+            .into();
+        e["event"]["raw_dlc"] = Value::Null;
+        e["event"]["direction"] = direction.into();
+        e["event"]["frame"] = serde_json::json!({
+            "kind": kind, "id": id, "extended": extended, "brs": brs,
+            "esi": esi, "data_hex": data, "dlc": dlc
+        });
+        records.push(e);
+    }
+    let mut log = Vec::new();
+    let summary = export_asc(Tiny(Cursor::new(bytes(&records.into()))), &mut log, 2).unwrap();
+    assert_eq!(summary.frames.as_str(), "6");
+    let tail = "       0    0";
+    let zeros = "       0        0        0        0        0";
+    let name = " ".repeat(32);
+    assert_eq!(
+        String::from_utf8(log).unwrap(),
+        format!(
+            "date Sun Nov 15 10:00:00.123 2026\n\
+             base hex  timestamps absolute\n\
+             no internal events logged\n\
+             Begin Triggerblock Sun Nov 15 10:00:00.123 2026\n\
+             \x20  0.000000 Start of measurement\n\
+             \x20  0.000000 2  123             Rx   d 8 01 02 03 04 05 06 07 08\n\
+             \x20  1.234567 2  1ABCDEF0x       Tx   d 0\n\
+             \x20  2.469134 2  7FF             Rx   r 4\n\
+             \x20  3.703701 CANFD   2 Tx         12  {name} 1 1 1  1 0A {tail}     7000 {zeros}\n\
+             \x20  4.938268 CANFD   2 Rx        100  {name} 1 0 9 12 BB BB BB BB BB BB BB BB BB BB BB BB {tail}     3000 {zeros}\n\
+             \x20  6.172835 CANFD   2 Rx        101  {name} 0 0 0  0 {tail}     1000 {zeros}\n\
+             End TriggerBlock\n"
+        )
+    );
+
+    // Time is counted from the first event even when it is not a frame, and
+    // diagnostics are skipped.
+    let diagnostic = fixtures["valid"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["name"] == "diagnostic_only")
+        .unwrap();
+    let mut log = Vec::new();
+    let summary = export_asc(bytes(&diagnostic["records"]).as_slice(), &mut log, 1).unwrap();
+    assert_eq!(summary.skipped_diagnostics.as_str(), "1");
+    let log = String::from_utf8(log).unwrap();
+    assert_eq!(log.lines().count(), 6, "{log}");
+    assert!(
+        log.starts_with("date Thu Jan 01 00:00:00.001 1970\n"),
+        "{log}"
+    );
+
+    for case in fixtures["invalid"].as_array().unwrap() {
+        assert!(
+            export_asc(bytes(&case["records"]).as_slice(), Vec::new(), 1).is_err(),
+            "{}",
+            case["name"]
+        );
+    }
+    let capture = bytes(&fixtures["valid"][0]["records"]);
+    assert!(export_asc(capture.as_slice(), Vec::new(), 0).is_err());
+    // A creation time past year 9999 has no ASC date.
+    let mut late = base.clone();
+    late[0]["created_unix_ms"] = "253402300800000".into();
+    assert!(export_asc(bytes(&late).as_slice(), Vec::new(), 1).is_err());
+    late[0]["created_unix_ms"] = "253402300799999".into();
+    let mut log = Vec::new();
+    export_asc(bytes(&late).as_slice(), &mut log, 1).unwrap();
+    assert!(log.starts_with(b"date Fri Dec 31 23:59:59.999 9999\n"));
 }

@@ -101,6 +101,141 @@ fn export_writes_a_candump_log_once_and_leaves_nothing_after_invalid_input() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+/// The ASC log is read back with python-can, the parser this export was
+/// written against. Skipped when the interpreter or python-can is missing.
+#[test]
+fn asc_export_is_read_back_by_python_can() {
+    let fixtures: Value =
+        serde_json::from_str(include_str!("../../../api/capture-fixtures.json")).unwrap();
+    let base = &fixtures["valid"][0]["records"];
+    let frames = [
+        (
+            "classic_data",
+            0x123,
+            false,
+            "0102030405060708",
+            8,
+            "rx",
+            false,
+            false,
+        ),
+        ("classic_data", 0x1abc_def0, true, "", 0, "tx", false, false),
+        ("classic_remote", 0x7ff, false, "", 4, "rx", false, false),
+        ("classic_remote", 0x12, false, "", 0, "tx", false, false),
+        ("fd_data", 0x12, false, "0a", 1, "rx", false, false),
+        (
+            "fd_data",
+            0x1fff_ffff,
+            true,
+            &"aa".repeat(64),
+            15,
+            "tx",
+            true,
+            true,
+        ),
+        (
+            "fd_data",
+            0x100,
+            false,
+            &"bb".repeat(12),
+            9,
+            "rx",
+            true,
+            false,
+        ),
+    ];
+    let mut data = format!("{}\n", base[0]);
+    for (i, (kind, id, extended, payload, dlc, direction, brs, esi)) in frames.iter().enumerate() {
+        let mut e = base[1].clone();
+        e["event"]["sequence"] = (i + 1).to_string().into();
+        e["event"]["host_monotonic_ns"] = (5_000_000_000 + i as u64 * 1_234_567_000)
+            .to_string()
+            .into();
+        e["event"]["raw_dlc"] = Value::Null;
+        e["event"]["direction"] = (*direction).into();
+        e["event"]["frame"] = serde_json::json!({
+            "kind": kind, "id": id, "extended": extended, "brs": brs,
+            "esi": esi, "data_hex": payload, "dlc": dlc
+        });
+        data.push_str(&format!("{e}\n"));
+    }
+    let root = test_temp_dir().join(format!("ch-asc-{}", uuid::Uuid::new_v4().simple()));
+    std::fs::create_dir(&root).unwrap();
+    let input = root.join("capture.ndjson");
+    let output = root.join("capture.asc");
+    std::fs::write(&input, data).unwrap();
+    let written = Command::new(env!("CARGO_BIN_EXE_canharbor"))
+        .args([
+            "--runtime-dir",
+            "/tmp/canharbor-absent-offline",
+            "capture",
+            "export",
+            "--format",
+            "asc",
+            "--asc-channel",
+            "3",
+        ])
+        .arg(&input)
+        .arg("--output")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(
+        written.status.success(),
+        "{}",
+        String::from_utf8_lossy(&written.stderr)
+    );
+    let summary: Value = serde_json::from_slice(&written.stdout).unwrap();
+    assert_eq!(summary["frames"], "7");
+
+    let python = std::env::var_os("CANHARBOR_TEST_PYTHON").unwrap_or_else(|| "python3".into());
+    let script =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../python/tests/asc_export.py");
+    let read = match Command::new(&python).arg(script).arg(&output).output() {
+        Ok(read) => read,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("skipped: no Python interpreter");
+            std::fs::remove_dir_all(root).unwrap();
+            return;
+        }
+        Err(error) => panic!("{error}"),
+    };
+    assert!(
+        read.status.success(),
+        "{}",
+        String::from_utf8_lossy(&read.stderr)
+    );
+    std::fs::remove_dir_all(root).unwrap();
+    if read.stdout.starts_with(b"skipped") {
+        eprintln!("{}", String::from_utf8_lossy(&read.stdout));
+        return;
+    }
+    let messages: Value = serde_json::from_slice(&read.stdout).unwrap();
+    let expected: Vec<Value> = frames
+        .iter()
+        .enumerate()
+        .map(|(i, (kind, id, extended, payload, _, direction, brs, esi))| {
+            serde_json::json!({
+                "us": i as u64 * 1_234_567,
+                "id": id,
+                "extended": extended,
+                "rx": *direction == "rx",
+                "remote": *kind == "classic_remote",
+                "fd": *kind == "fd_data",
+                "brs": brs,
+                "esi": esi,
+                // python-can reports the payload length, or the requested
+                // length of a remote frame.
+                "dlc": if *kind == "classic_remote" { [4, 0][i - 2] } else { payload.len() / 2 },
+                "data": payload,
+                // python-can numbers channels from zero.
+                "channel": 2,
+            })
+        })
+        .collect();
+    assert_eq!(messages, Value::from(expected));
+}
+
 fn test_temp_dir() -> std::path::PathBuf {
     if cfg!(windows) {
         std::env::temp_dir()

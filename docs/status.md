@@ -17,8 +17,8 @@ behavior and may include work that has not been implemented.
   including value tables. The supported subset is listed on that page; the
   browser does not decode signals.
 - Service-owned recordings, downloads and a bounded browser offline viewer.
-  `capture export` writes a recording as a can-utils candump log; ASC and BLF
-  are not supported.
+  `capture export` writes a recording as a can-utils candump log or a Vector
+  ASCII (ASC) log; BLF is not supported, and no log format can be imported.
 - Rust client, C ABI and Python wrapper, including optional native streaming and
   capture download extensions. The Python package registers a
   [python-can interface](../python/README.md#python-can-interface) and is
