@@ -55,6 +55,7 @@ async fn cli(root: &Path, args: &[&str]) -> std::process::Output {
     .unwrap()
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "real-time stress run against a service process; see the Stress workflow or run with -- --ignored"]
 async fn stress_cli_virtual_service_validation_execution_and_export() {
     let _isolation = TIMED_CASE.acquire().await.unwrap();
     let root = test_temp_dir().join(format!("ch-stress-{}", uuid::Uuid::new_v4()));
@@ -147,6 +148,7 @@ async fn stress_cli_virtual_service_validation_execution_and_export() {
 
 // A real process boundary, with only the built-in virtual backend registered.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "real-time stress run against a service process; see the Stress workflow or run with -- --ignored"]
 async fn killed_service_recovers_prefix_without_restarting_transmission() {
     let _isolation = TIMED_CASE.acquire().await.unwrap();
     for adaptive in [false, true] {
@@ -314,6 +316,7 @@ async fn killed_service_recovers_prefix_without_restarting_transmission() {
 
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "real-time stress run against a service process; see the Stress workflow or run with -- --ignored"]
 async fn multi_agent_coordinate_commits_once_and_aborts_on_lost_commit_response() {
     let _isolation = TIMED_CASE.acquire().await.unwrap();
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
@@ -490,6 +493,7 @@ async fn multi_agent_coordinate_commits_once_and_aborts_on_lost_commit_response(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "real-time stress run against a service process; see the Stress workflow or run with -- --ignored"]
 async fn group_cli_shares_budget_and_stops_one_flow_without_stopping_its_peer() {
     let _isolation = TIMED_CASE.acquire().await.unwrap();
     let root = test_temp_dir().join(format!("ch-b3-cli-{}", uuid::Uuid::new_v4().simple()));

@@ -889,6 +889,7 @@ fn fd_plan() -> Value {
     p
 }
 #[tokio::test]
+#[ignore = "real-time stress run that must complete every slot; see the Stress workflow or run with -- --ignored"]
 async fn fd_crc_and_rtt_report_survive_persisted_independent_replay() {
     let _isolation = TIMED_CASE.acquire().await.unwrap();
     let rt = Runtime::new(Arc::new(VirtualBus::new(8192)));
@@ -1130,6 +1131,7 @@ async fn criteria_are_frozen_by_hash_idempotency_and_persisted_assessment() {
 }
 
 #[tokio::test]
+#[ignore = "real-time stress run that must complete every slot; see the Stress workflow or run with -- --ignored"]
 async fn multi_flow_api_persists_verifies_and_recovers_without_reopening_channels() {
     let _isolation = TIMED_CASE.acquire().await.unwrap();
     let root = std::path::PathBuf::from(if cfg!(windows) {
@@ -1238,6 +1240,7 @@ async fn multi_flow_api_persists_verifies_and_recovers_without_reopening_channel
 }
 
 #[tokio::test]
+#[ignore = "real-time stress run that must complete every slot; see the Stress workflow or run with -- --ignored"]
 async fn classic_pattern_raw_evidence_replays_after_restart_and_tampered_control_accounting_fails()
 {
     let _isolation = TIMED_CASE.acquire().await.unwrap();
@@ -1329,6 +1332,7 @@ async fn classic_pattern_raw_evidence_replays_after_restart_and_tampered_control
 }
 
 #[tokio::test]
+#[ignore = "real-time stress run that must complete every slot; see the Stress workflow or run with -- --ignored"]
 async fn adaptive_steps_freeze_selection_and_recover_without_resubmitting() {
     let _isolation = TIMED_CASE.acquire().await.unwrap();
     let root = std::path::PathBuf::from(if cfg!(windows) {
@@ -1445,6 +1449,7 @@ async fn adaptive_steps_freeze_selection_and_recover_without_resubmitting() {
 }
 
 #[tokio::test]
+#[ignore = "real-time stress run that must complete every slot; see the Stress workflow or run with -- --ignored"]
 async fn sliding_queue_evidence_persists_and_recovers_without_opening_devices() {
     let _isolation = TIMED_CASE.acquire().await.unwrap();
     let root = std::path::PathBuf::from(if cfg!(windows) {

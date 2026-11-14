@@ -3,6 +3,11 @@ import { defineConfig } from "@playwright/test";
 import { nativeBinary, nativeRuntime } from "./tests/native";
 export default defineConfig({
   testDir: "./tests",
+  // The stress specs run real-time plans and depend on host scheduling. They
+  // run in the Stress workflow, or locally with CANHARBOR_REALTIME_TESTS=1.
+  testIgnore: process.env.CANHARBOR_REALTIME_TESTS
+    ? []
+    : ["**/stress.spec.ts", "**/i18n-stress.spec.ts"],
   workers: 1,
   fullyParallel: false,
   timeout: 30000,
