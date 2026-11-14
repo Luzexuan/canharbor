@@ -14,7 +14,7 @@ behavior and may include work that has not been implemented.
   periodic tasks. The CLI accepts `cansend` frame notation, prints events as
   JSON or text, filters by identifier and generates shell completions.
 - Signal decoding from a [DBC file](dbc.md), including value tables, in
-  `monitor --format text` and in the workbench's frame table. The supported
+  `monitor --format text` and in the workbench's live and offline tables. The supported
   subset is listed on that page.
 - Service-owned recordings, downloads and a bounded browser offline viewer.
   `capture export` writes a recording as a can-utils candump log or a Vector

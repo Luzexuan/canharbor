@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { useState, type ReactNode } from "react";
 import type { BusEvent } from "./api";
-import { hexBytes, signalText, type DbcDatabase } from "./dbc";
+import type { DbcDatabase } from "./dbc";
+import { signalCell } from "./DbcControl";
 import { text } from "./i18n/messages";
 
 export type FrameBusEvent = Extract<BusEvent, { type: "frame_received" }>;
@@ -43,21 +44,6 @@ export function FrameTable({
     firstRow + Math.ceil(frameViewport.height / rowHeight) + 2 * ROW_OVERSCAN,
   );
   const columns = database ? 8 : 7;
-  const signals = (row: FrameBusEvent) => {
-    // Remote frames carry no data.
-    const decoded =
-      row.frame.kind === "classic_remote"
-        ? null
-        : database?.decode(
-            row.frame.id,
-            row.frame.extended,
-            hexBytes(row.frame.data_hex),
-          );
-    if (!decoded) return "—";
-    return decoded.truncated
-      ? `${signalText(decoded)} ${text("main:signals_beyond_the_payload_value", { number: decoded.truncated })}`
-      : signalText(decoded);
-  };
   return (
     <div
       className="table-scroll"
@@ -134,7 +120,11 @@ export function FrameTable({
               </td>
               <td>{row.frame.dlc}</td>
               <td>{row.frame.data_hex.match(/.{2}/g)?.join(" ") || "—"}</td>
-              {database && <td className="frame-signals">{signals(row)}</td>}
+              {database && (
+                <td className="frame-signals">
+                  {signalCell(database, row.frame)}
+                </td>
+              )}
             </tr>
           ))}
           {lastRow < visibleRows.length && (

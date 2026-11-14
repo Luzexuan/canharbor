@@ -82,7 +82,109 @@ test("a loaded DBC file adds decoded signals to the frame table", async ({
   const other = page.getByRole("row").filter({ hasText: "01 02" });
   await expect(other.getByRole("cell").last()).toHaveText("—");
 
-  await page.getByRole("button", { name: "Remove DBC", exact: true }).click();
+  // The by-identifier view shows the signals of the latest frame per group.
+  await page
+    .getByRole("combobox", { name: "Monitor view", exact: true })
+    .selectOption("ids");
+  const groups = page.locator(".aggregate-table");
+  await expect(
+    groups.getByRole("columnheader", { name: "Signals", exact: true }),
+  ).toBeVisible();
+  await expect(
+    groups.getByRole("row").filter({ hasText: "C8 00 3C 02" }),
+  ).toContainText("Engine: Speed=100 km/h");
+  await expect(
+    groups
+      .getByRole("row")
+      .filter({ hasText: "01 02" })
+      .getByRole("cell")
+      .last(),
+  ).toHaveText("—");
+  await page
+    .getByRole("combobox", { name: "Monitor view", exact: true })
+    .selectOption("frames");
+
+  // The offline viewer uses the same database and has the control while it
+  // is the open view.
+  await page
+    .getByRole("button", { name: "Offline analysis", exact: true })
+    .click();
+  const offline = page.getByRole("region", { name: "Offline capture viewer" });
+  await expect(offline.getByTestId("dbc-status")).toContainText("vehicle.dbc");
+  await expect(page.getByLabel("DBC file (optional)")).toHaveCount(1);
+  const event = (sequence: number, id: number, data_hex: string) =>
+    JSON.stringify({
+      record: "event",
+      event: {
+        type: "frame_received",
+        sequence: String(sequence),
+        host_monotonic_ns: String(sequence * 1000),
+        timestamp_quality: "host_only",
+        device_raw_timestamp_us: null,
+        device_timestamp_us: null,
+        timestamp_epoch: "0",
+        raw_dlc: null,
+        direction: "rx",
+        frame: {
+          kind: "classic_data",
+          id,
+          extended: false,
+          brs: false,
+          esi: false,
+          data_hex,
+          dlc: data_hex.length / 2,
+        },
+      },
+    });
+  await offline.getByLabel("Local capture file").setInputFiles({
+    name: "capture.ndjson",
+    mimeType: "application/x-ndjson",
+    buffer: Buffer.from(
+      [
+        JSON.stringify({
+          record: "header",
+          schema_version: 1,
+          capture_id: "c",
+          owner: "o",
+          server_instance_id: "s",
+          session_epoch: "s1@1",
+          created_unix_ms: "1",
+          config: {},
+        }),
+        event(1, 0x123, "C8003C02"),
+        event(2, 0x124, "0102"),
+        JSON.stringify({
+          record: "footer",
+          complete: true,
+          events: "2",
+          dropped: "0",
+          reason: null,
+        }),
+      ].join("\n") + "\n",
+    ),
+  });
+  await expect(
+    offline.getByRole("columnheader", { name: "Signals", exact: true }),
+  ).toBeVisible();
+  await expect(
+    offline.getByRole("row").filter({ hasText: "C8003C02" }),
+  ).toContainText("Engine: Speed=100 km/h, Temp=20 degC, Gear=2 (Drive)");
+  await expect(
+    offline
+      .getByRole("row")
+      .filter({ hasText: "0102" })
+      .getByRole("cell")
+      .last(),
+  ).toHaveText("—");
+
+  // Removing the database from here removes the column in every view.
+  await offline
+    .getByRole("button", { name: "Remove DBC", exact: true })
+    .click();
+  await expect(
+    offline.getByRole("columnheader", { name: "Signals", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Live traffic", exact: true }).click();
   await expect(header).toHaveCount(0);
   await expect(page.getByTestId("dbc-status")).toHaveCount(0);
 });

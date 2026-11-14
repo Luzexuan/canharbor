@@ -18,12 +18,14 @@ and extended identifiers with the same number are different messages.
 The frame monitor has an optional **DBC file** control. With a file loaded, the
 recent-frames table gets a **Signals** column in the same layout as the CLI
 output. Frames already in the table are decoded as well, and a signal beyond
-the received payload is counted at the end of the cell.
+the received payload is counted at the end of the cell. The by-identifier view
+shows the signals of the latest frame of each group, and the offline capture
+viewer shows them for the events of the page on display. The offline viewer
+has the same file control; one database applies to all three tables.
 
 The file is read and decoded in the page. It is not sent to the service, is not
 stored, and has to be chosen again after a reload. A file that is rejected
-reports its line and leaves the previous database in place. The offline
-capture viewer and the by-identifier view do not show signals.
+reports its line and leaves the previous database in place.
 
 The page uses its own implementation of the rules below
 (`web/src/dbc.ts`), kept in step with the Rust crate by running the same
