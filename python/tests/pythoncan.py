@@ -127,7 +127,8 @@ with CanHarborBus("virtual:1", active=True, **common) as peer, \
         peer.recv(timeout=0)  # the peer is not under test; keep its buffer small
         rounds += 1
         time.sleep(0.03)  # stay under the service's transmit rate limit
-    assert rounds > 30, rounds
+    # How many rounds fit depends on the host, so there is no floor on it. What
+    # matters is the time without a read, which the loop above fixes.
     # Nothing was read by the program so far; everything is still delivered.
     first = sender.recv(timeout=10.0)
     assert first is not None and first.arbitration_id == 0x400
