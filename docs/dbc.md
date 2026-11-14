@@ -20,11 +20,15 @@ and extended identifiers with the same number are different messages.
 - 32-bit and 64-bit IEEE floats declared with `SIG_VALTYPE_`.
 - Linear scaling (`factor`, `offset`) and units. Integers with factor 1 and
   offset 0 are printed exactly; scaled values are printed as 64-bit floats.
+- Value tables (`VAL_`): when the raw value of an integer signal has a name,
+  it is printed after the value, for example `Gear=3 (Drive)`. Names apply to
+  the raw value, before scaling.
 - Simple multiplexing: one `M` selector per message with `m<N>` signals. A
   multiplexed signal is shown only when the selector equals its value.
 
-Value tables (`VAL_`), attributes, comments, signal groups and minimum/maximum
-ranges are read past and not used. Files that use extended multiplexing
+Attributes, comments, signal groups, minimum/maximum ranges, and value tables
+for environment variables are read past and not used. A value table whose text
+continues on a following line is left out. Files that use extended multiplexing
 (`SG_MUL_VAL_` or `m<N>M` signals) are rejected: decoding them with the simple
 rules would print wrong values. A malformed signal definition is also an error,
 reported with its line number. Files larger than 16 MiB are refused.

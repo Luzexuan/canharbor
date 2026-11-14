@@ -97,6 +97,9 @@ pub fn signals(event: &BusEvent, database: &canharbor_dbc::Database) -> Option<S
     for (index, signal) in message.signals.iter().enumerate() {
         line.push_str(if index == 0 { " " } else { ", " });
         line.push_str(&format!("{}={}", printable(signal.name), signal.value));
+        if let Some(label) = signal.label {
+            line.push_str(&format!(" ({})", printable(label)));
+        }
         if !signal.unit.is_empty() {
             line.push(' ');
             line.push_str(&printable(signal.unit));
@@ -163,7 +166,8 @@ mod tests {
     fn signals_are_decoded_for_known_data_frames_only() {
         let database = canharbor_dbc::Database::parse(
             b"BO_ 291 Engine: 8 ECU\n SG_ Speed : 0|16@1+ (0.5,0) [0|0] \"km/h\" X\n\
-              \x20SG_ Gear : 16|8@1+ (1,0) [0|0] \"\x1b[31m\" X\n SG_ Far : 56|8@1+ (1,0) [0|0] \"\" X\n",
+              \x20SG_ Gear : 16|8@1+ (1,0) [0|0] \"\x1b[31m\" X\n SG_ Far : 56|8@1+ (1,0) [0|0] \"\" X\n\
+              VAL_ 291 Gear 3 \"Drive\" ;\n",
         )
         .unwrap();
         let known = frame(
@@ -172,7 +176,7 @@ mod tests {
         );
         assert_eq!(
             signals(&known, &database).as_deref(),
-            Some("Engine: Speed=100 km/h, Gear=3 ?[31m (1 signal(s) beyond the payload)")
+            Some("Engine: Speed=100 km/h, Gear=3 (Drive) ?[31m (1 signal(s) beyond the payload)")
         );
         for other in [
             json!({"kind":"classic_data","id":0x124,"extended":false,"brs":false,"esi":false,"data_hex":"c80003","dlc":3}),

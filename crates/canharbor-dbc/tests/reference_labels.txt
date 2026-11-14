@@ -1,0 +1,64 @@
+76D 0 3000 Gear=Park;Mode=-;Scaled=-
+76D 0 3002 Gear=Park;Mode=-;Scaled=Two raw
+76D 0 30ff Gear=Park;Mode=-;Scaled=Top
+76D 0 3007 Gear=Park;Mode=-;Scaled=-
+76D 0 8100 Gear=Reverse;Mode=-;Scaled=-
+76D 0 8102 Gear=Reverse;Mode=-;Scaled=Two raw
+76D 0 81ff Gear=Reverse;Mode=-;Scaled=Top
+76D 0 8107 Gear=Reverse;Mode=-;Scaled=-
+76D 0 d200 Gear=Neutral;Mode=-;Scaled=-
+76D 0 d202 Gear=Neutral;Mode=-;Scaled=Two raw
+76D 0 d2ff Gear=Neutral;Mode=-;Scaled=Top
+76D 0 d207 Gear=Neutral;Mode=-;Scaled=-
+76D 0 2300 Gear=Drive;Mode=-;Scaled=-
+76D 0 2302 Gear=Drive;Mode=-;Scaled=Two raw
+76D 0 23ff Gear=Drive;Mode=-;Scaled=Top
+76D 0 2307 Gear=Drive;Mode=-;Scaled=-
+76D 0 7400 Gear=-;Mode=-;Scaled=-
+76D 0 7402 Gear=-;Mode=-;Scaled=Two raw
+76D 0 74ff Gear=-;Mode=-;Scaled=Top
+76D 0 7407 Gear=-;Mode=-;Scaled=-
+76D 0 c500 Gear=-;Mode=-;Scaled=-
+76D 0 c502 Gear=-;Mode=-;Scaled=Two raw
+76D 0 c5ff Gear=-;Mode=-;Scaled=Top
+76D 0 c507 Gear=-;Mode=-;Scaled=-
+76D 0 1600 Gear=-;Mode=Say "on";Scaled=-
+76D 0 1602 Gear=-;Mode=Say "on";Scaled=Two raw
+76D 0 16ff Gear=-;Mode=Say "on";Scaled=Top
+76D 0 1607 Gear=-;Mode=Say "on";Scaled=-
+76D 0 6700 Gear=-;Mode=-;Scaled=-
+76D 0 6702 Gear=-;Mode=-;Scaled=Two raw
+76D 0 67ff Gear=-;Mode=-;Scaled=Top
+76D 0 6707 Gear=-;Mode=-;Scaled=-
+76D 0 b800 Gear=-;Mode=-;Scaled=-
+76D 0 b802 Gear=-;Mode=-;Scaled=Two raw
+76D 0 b8ff Gear=-;Mode=-;Scaled=Top
+76D 0 b807 Gear=-;Mode=-;Scaled=-
+76D 0 0900 Gear=-;Mode=Off;Scaled=-
+76D 0 0902 Gear=-;Mode=Off;Scaled=Two raw
+76D 0 09ff Gear=-;Mode=Off;Scaled=Top
+76D 0 0907 Gear=-;Mode=Off;Scaled=-
+76D 0 5a00 Gear=-;Mode=-;Scaled=-
+76D 0 5a02 Gear=-;Mode=-;Scaled=Two raw
+76D 0 5aff Gear=-;Mode=-;Scaled=Top
+76D 0 5a07 Gear=-;Mode=-;Scaled=-
+76D 0 ab00 Gear=-;Mode=-;Scaled=-
+76D 0 ab02 Gear=-;Mode=-;Scaled=Two raw
+76D 0 abff Gear=-;Mode=-;Scaled=Top
+76D 0 ab07 Gear=-;Mode=-;Scaled=-
+76D 0 fc00 Gear=-;Mode=Invalid;Scaled=-
+76D 0 fc02 Gear=-;Mode=Invalid;Scaled=Two raw
+76D 0 fcff Gear=-;Mode=Invalid;Scaled=Top
+76D 0 fc07 Gear=-;Mode=Invalid;Scaled=-
+76D 0 4d00 Gear=-;Mode=-;Scaled=-
+76D 0 4d02 Gear=-;Mode=-;Scaled=Two raw
+76D 0 4dff Gear=-;Mode=-;Scaled=Top
+76D 0 4d07 Gear=-;Mode=-;Scaled=-
+76D 0 9e00 Gear=-;Mode=-;Scaled=-
+76D 0 9e02 Gear=-;Mode=-;Scaled=Two raw
+76D 0 9eff Gear=-;Mode=-;Scaled=Top
+76D 0 9e07 Gear=-;Mode=-;Scaled=-
+76D 0 ef00 Gear=-;Mode=-;Scaled=-
+76D 0 ef02 Gear=-;Mode=-;Scaled=Two raw
+76D 0 efff Gear=-;Mode=-;Scaled=Top
+76D 0 ef07 Gear=-;Mode=-;Scaled=-

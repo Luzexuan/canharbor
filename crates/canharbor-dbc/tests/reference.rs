@@ -2,6 +2,7 @@
 //! `reference.dbc` and `reference.txt` were generated for this project: random
 //! signal layouts and payloads, with the expected values computed by cantools
 //! 45.1.2. Each line of the text file is `ID EXTENDED PAYLOAD name=value;...`.
+//! `reference_labels.txt` holds the value-table names for one message.
 use canharbor_dbc::{Database, Error, Value};
 
 fn number(value: Value) -> f64 {
@@ -181,6 +182,67 @@ fn units_keep_their_characters_in_utf8_and_windows_1252_files() {
         unit(&signal("\u{b0}C \u{20ac}".as_bytes())),
         "\u{b0}C \u{20ac}"
     );
+}
+#[test]
+fn value_table_names_match_the_reference_implementation() {
+    // `reference_labels.txt`: `ID EXTENDED PAYLOAD name=label;...`, with `-`
+    // where cantools reports no name for the raw value.
+    let database = Database::parse(include_bytes!("reference.dbc")).unwrap();
+    let mut named = 0;
+    for line in include_str!("reference_labels.txt").lines() {
+        let mut fields = line.splitn(4, ' ');
+        let id = u32::from_str_radix(fields.next().unwrap(), 16).unwrap();
+        let extended = fields.next().unwrap() == "1";
+        let payload = fields.next().unwrap();
+        let data: Vec<u8> = (0..payload.len() / 2)
+            .map(|i| u8::from_str_radix(&payload[2 * i..2 * i + 2], 16).unwrap())
+            .collect();
+        let decoded = database.decode(id, extended, &data).unwrap();
+        for pair in fields.next().unwrap().split(';') {
+            let (name, label) = pair.split_once('=').unwrap();
+            let signal = decoded.signals.iter().find(|s| s.name == name).unwrap();
+            assert_eq!(signal.label.unwrap_or("-"), label, "{name} in {line}");
+            named += usize::from(signal.label.is_some());
+        }
+    }
+    assert!(named > 50, "{named}");
+}
+#[test]
+fn value_tables_are_optional_and_strictly_parsed() {
+    let base = "BO_ 1 M: 8 E\n SG_ S : 0|8@1- (1,0) [0|0] \"\" X\n SG_ F : 8|32@1+ (1,0) [0|0] \"\" X\nSIG_VALTYPE_ 1 F : 1;\n";
+    let label = |tables: &str, data: &[u8]| {
+        let database = Database::parse(format!("{base}{tables}").as_bytes()).unwrap();
+        let decoded = database.decode(1, false, data).unwrap();
+        decoded
+            .signals
+            .iter()
+            .map(|s| s.label.map(str::to_owned))
+            .collect::<Vec<_>>()
+    };
+    let data = [0xff, 0, 0, 0x80, 0x3f];
+    // Signed raw values, tabs between fields, and no terminating semicolon.
+    assert_eq!(
+        label("VAL_\t1 S -1 \"Invalid\"\t0 \"Off\"\n", &data)[0].as_deref(),
+        Some("Invalid")
+    );
+    // A float signal has no integer raw value to name.
+    assert_eq!(label("VAL_ 1 F 1 \"One\" ;\n", &data)[1], None);
+    // Tables for unknown signals, other messages and environment variables are ignored.
+    assert_eq!(
+        label(
+            "VAL_ 1 Other 0 \"x\" ;\nVAL_ 2 S -1 \"x\" ;\nVAL_ Env 0 \"x\" ;\n",
+            &data
+        ),
+        [None, None]
+    );
+    // A name that continues on the next line leaves the table out.
+    assert_eq!(label("VAL_ 1 S -1 \"two\nlines\" ;\n", &data)[0], None);
+    for malformed in ["VAL_ 1 S x \"a\" ;\n", "VAL_ 1 S 1 a ;\n", "VAL_ 1 S 1\n"] {
+        assert!(
+            Database::parse(format!("{base}{malformed}").as_bytes()).is_err(),
+            "{malformed}"
+        );
+    }
 }
 #[test]
 fn malformed_and_unsupported_files_are_rejected() {
