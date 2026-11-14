@@ -48,7 +48,7 @@ enum Mux {
     Selected(u64),
 }
 /// A `VAL_` record: message key, signal name and the names of raw values.
-type Table = ((u32, bool), String, Vec<(i64, String)>);
+type Table = ((u32, bool), String, Vec<(i128, String)>);
 #[derive(Debug, Clone)]
 struct Signal {
     name: String,
@@ -60,8 +60,9 @@ struct Signal {
     offset: f64,
     unit: String,
     mux: Mux,
-    /// Names for raw values, from a `VAL_` record.
-    labels: Vec<(i64, String)>,
+    /// Names for raw values, from a `VAL_` record. Wide enough for negative
+    /// signed values and the whole unsigned 64-bit range.
+    labels: Vec<(i128, String)>,
 }
 #[derive(Debug, Clone)]
 struct Message {
@@ -143,13 +144,13 @@ fn field(text: &str) -> Option<(&str, &str)> {
     Some((&text[..end], &text[end..]))
 }
 /// The raw value as the integer a value table refers to.
-fn raw_integer(raw: u64, signal: &Signal) -> Option<i64> {
+fn raw_integer(raw: u64, signal: &Signal) -> Option<i128> {
     match signal.kind {
         Kind::Float => None,
-        Kind::Unsigned => i64::try_from(raw).ok(),
+        Kind::Unsigned => Some(i128::from(raw)),
         Kind::Signed => {
             let shift = 64 - u32::from(signal.length);
-            Some((raw << shift) as i64 >> shift)
+            Some(i128::from((raw << shift) as i64 >> shift))
         }
     }
 }
@@ -405,7 +406,13 @@ impl Database {
                     let (value, after) = pairs
                         .split_once(char::is_whitespace)
                         .ok_or(bad("value table entry"))?;
-                    let value = value.parse::<i64>().map_err(|_| bad("value table value"))?;
+                    let value = value
+                        .parse::<i128>()
+                        .ok()
+                        .filter(|value| {
+                            (i128::from(i64::MIN)..=i128::from(u64::MAX)).contains(value)
+                        })
+                        .ok_or(bad("value table value"))?;
                     let (label, after) = take_quoted(after).ok_or(bad("value table name"))?;
                     labels.push((value, label));
                     pairs = after;

@@ -230,6 +230,28 @@ fn value_tables_are_optional_and_strictly_parsed() {
         label("VAL_  1 \t S   -1  \"Invalid\"   0\t\"Off\"  ;\n", &data)[0].as_deref(),
         Some("Invalid")
     );
+    // The whole unsigned 64-bit range and the most negative signed value.
+    let wide = Database::parse(
+        b"BO_ 2 W: 8 E\n SG_ U : 0|64@1+ (1,0) [0|0] \"\" X\nBO_ 3 N: 8 E\n SG_ I : 0|64@1- (1,0) [0|0] \"\" X\n\
+          VAL_ 2 U 18446744073709551615 \"All ones\" 9223372036854775808 \"Top bit\" ;\n\
+          VAL_ 3 I -9223372036854775808 \"Minimum\" -1 \"Minus one\" ;\n",
+    )
+    .unwrap();
+    let name = |id, data: [u8; 8]| {
+        wide.decode(id, false, &data).unwrap().signals[0]
+            .label
+            .map(str::to_owned)
+    };
+    assert_eq!(name(2, [0xff; 8]).as_deref(), Some("All ones"));
+    assert_eq!(
+        name(2, [0, 0, 0, 0, 0, 0, 0, 0x80]).as_deref(),
+        Some("Top bit")
+    );
+    assert_eq!(
+        name(3, [0, 0, 0, 0, 0, 0, 0, 0x80]).as_deref(),
+        Some("Minimum")
+    );
+    assert_eq!(name(3, [0xff; 8]).as_deref(), Some("Minus one"));
     // A float signal has no integer raw value to name.
     assert_eq!(label("VAL_ 1 F 1 \"One\" ;\n", &data)[1], None);
     // Tables for unknown signals, other messages and environment variables are ignored.
@@ -242,7 +264,13 @@ fn value_tables_are_optional_and_strictly_parsed() {
     );
     // A name that continues on the next line leaves the table out.
     assert_eq!(label("VAL_ 1 S -1 \"two\nlines\" ;\n", &data)[0], None);
-    for malformed in ["VAL_ 1 S x \"a\" ;\n", "VAL_ 1 S 1 a ;\n", "VAL_ 1 S 1\n"] {
+    for malformed in [
+        "VAL_ 1 S x \"a\" ;\n",
+        "VAL_ 1 S 1 a ;\n",
+        "VAL_ 1 S 1\n",
+        "VAL_ 1 S 18446744073709551616 \"a\" ;\n",
+        "VAL_ 1 S -9223372036854775809 \"a\" ;\n",
+    ] {
         assert!(
             Database::parse(format!("{base}{malformed}").as_bytes()).is_err(),
             "{malformed}"
