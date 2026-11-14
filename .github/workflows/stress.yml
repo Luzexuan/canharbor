@@ -1,0 +1,77 @@
+name: Stress
+# Real-time stress runs. They depend on host scheduling, so they do not gate
+# every pull request: they run nightly, on demand, and for pull requests that
+# touch the stress code or these tests.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/canharbor-stress/**'
+      - 'crates/canharbor-core/**'
+      - 'crates/canharbor-virtual/**'
+      - 'crates/canharbor-server/src/stress*.rs'
+      - 'crates/canharbor-server/tests/stress.rs'
+      - 'crates/canharbor-cli/src/stress*.rs'
+      - 'crates/canharbor-cli/tests/stress.rs'
+      - 'web/src/StressPanel.tsx'
+      - 'web/src/FlowEditor.tsx'
+      - 'web/src/i18n/locales/*/stress.json'
+      - 'web/tests/stress.spec.ts'
+      - 'web/tests/i18n-stress.spec.ts'
+      - 'web/tests/isolated-service.ts'
+      - 'web/playwright.config.ts'
+      - '.github/workflows/stress.yml'
+permissions:
+  contents: read
+jobs:
+  stress:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            features: --all-features
+            cli_features: web-ui
+          - os: macos-latest
+            features: --all-features
+            cli_features: web-ui
+          - os: windows-2025
+            features: --features canharbor-cli/slcan,canharbor-cli/web-ui
+            cli_features: web-ui,slcan
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - run: bun install --cwd web --frozen-lockfile
+      - run: bun run --cwd web build
+      # The benchmark that is ignored for a different reason stays excluded.
+      - run: cargo test -p canharbor-server -p canharbor-cli ${{ matrix.features }} --locked --test stress -- --ignored --skip recorded_high_rate
+      - run: cargo build -p canharbor-cli --features ${{ matrix.cli_features }} --locked
+      - run: bun x --bun playwright install --with-deps chromium
+        working-directory: web
+      - run: bun run --cwd web test:e2e stress.spec.ts i18n-stress.spec.ts
+        env:
+          CANHARBOR_REALTIME_TESTS: '1'
+      - run: bun x --bun playwright install webkit
+        if: matrix.os == 'macos-latest'
+        working-directory: web
+      - run: bun run --cwd web test:e2e i18n-stress.spec.ts
+        if: matrix.os == 'macos-latest'
+        env:
+          CANHARBOR_REALTIME_TESTS: '1'
+          CANHARBOR_BROWSER: webkit
+          CANHARBOR_TEST_RUNTIME: /tmp/canharbor-playwright-webkit
+      - uses: actions/upload-artifact@v7.0.2
+        if: failure()
+        with:
+          name: playwright-results-stress-${{ matrix.os }}
+          path: web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7

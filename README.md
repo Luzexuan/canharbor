@@ -75,6 +75,13 @@ cargo build -p canharbor-cli --features web-ui --locked
 (cd web && bun x --bun playwright install chromium && bun run test:e2e)
 ```
 
+The stress cases that run real-time plans to completion depend on host scheduling and are not part of the commands above. They run in the Stress workflow (nightly, on demand, and for pull requests that touch stress code), or locally:
+
+```sh
+cargo test -p canharbor-server -p canharbor-cli --all-features --locked --test stress -- --ignored --skip recorded_high_rate
+(cd web && CANHARBOR_REALTIME_TESTS=1 bun run test:e2e stress.spec.ts i18n-stress.spec.ts)
+```
+
 The browser test starts its own local service, then checks CLI-to-browser and browser-to-CLI delivery. It also checks that a second browser cannot acquire an occupied control lease and that refresh does not resume sending.
 
 ## Design and status
