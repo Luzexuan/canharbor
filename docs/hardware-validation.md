@@ -69,13 +69,24 @@ A run passes when the receiver reports `passed: true` with `missing`,
 `duplicates` and `out_of_order` all zero and no diagnostics. Keep the final JSON
 of both commands for every run, including failed ones.
 
-Then, once, with a receiver running in listen-only mode on one side
-(`canharbor monitor --channel CHANNEL_B --listen-only --format text`):
+Then, once, watch the bus from side B in listen-only mode:
 
-- Unplug the sending adapter while idle and confirm that its service reports
-  the channel as disconnected and does not resume on reconnect.
-- Stop one service with Ctrl-C while the other is sending and confirm that the
-  sender reports failed or unknown submissions rather than success.
+```sh
+canharbor --runtime-dir /tmp/canharbor-b monitor --channel CHANNEL_B \
+  --listen-only --format text
+```
+
+- Unplug adapter A while idle. Service A should report the channel as
+  disconnected, and reconnecting the adapter should not resume anything.
+- Start a long `sequence send` through service A and stop **service A** with
+  Ctrl-C while it runs. Frames submitted before the stop keep their submitted
+  result. Requests after the stop must fail or report an unknown outcome; none
+  may be reported as submitted. The service's shutdown report should list any
+  transmissions it could not confirm.
+
+Stopping service B instead is not a check of the sender: a hardware submission
+means the adapter accepted the frame, not that a peer received or acknowledged
+it, so the sender may correctly keep reporting submitted frames.
 
 ## What a pass does and does not show
 
