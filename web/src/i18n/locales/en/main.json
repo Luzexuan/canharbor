@@ -187,5 +187,15 @@
   "stream_reconnected_value": "Stream reconnected {{number}} time(s). Traffic during disconnection is unavailable; retained rows span separate stream segments.",
   "id_filter_help_value": "Exact ID match, with optional 0x prefix. Recent frames retain {{rows}} frames; By ID retains up to {{groups}} groups across the observed stream. Pausing discards display updates; reception and recordings continue.",
   "display_loss_value": "Display evicted: {{evicted}} frames · paused updates skipped: {{paused}} · ID groups evicted: {{groups}}. These are separate from stream gaps.",
-  "last_frames_value": "Last {{rows}} frames · display is independent of reception"
+  "last_frames_value": "Last {{rows}} frames · display is independent of reception",
+  "signals": "Signals",
+  "signals_beyond_the_payload_value": "({{number}} signal(s) beyond the payload)",
+  "dbc_file_optional": "DBC file (optional)",
+  "dbc_loaded_value": "{{name}}: {{messages}} message(s). Signals are decoded in this page for display only; the file is not sent to the service and is not kept after a reload.",
+  "remove_dbc": "Remove DBC",
+  "the_dbc_file_could_not_be_read": "The DBC file could not be read.",
+  "the_dbc_file_exceeds_16_mib_or_the_signal_limit": "The DBC file exceeds 16 MiB or the signal-count limit.",
+  "dbc_not_supported_value": "This DBC file is not supported: {{reason}}.",
+  "dbc_line_not_supported_value": "DBC line {{line}} is not supported: {{reason}}.",
+  "dbc_line_not_read_value": "DBC line {{line}} could not be read: {{reason}}."
 }

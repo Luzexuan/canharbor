@@ -187,5 +187,15 @@
   "stream_reconnected_value": "事件流已重连 {{number}} 次。断开期间的流量不可用；保留的数据行来自不同事件流区段。",
   "id_filter_help_value": "精确匹配 ID，可带 0x 前缀。最近帧保留 {{rows}} 帧；按 ID 视图在已观测事件流中最多保留 {{groups}} 组。暂停只丢弃显示更新；接收和录制仍会继续。",
   "display_loss_value": "显示已淘汰：{{evicted}} 帧 · 暂停期间跳过的更新：{{paused}} · 已淘汰的 ID 分组：{{groups}}。这些计数与事件流缺口相互独立。",
-  "last_frames_value": "最近 {{rows}} 帧 · 显示独立于接收"
+  "last_frames_value": "最近 {{rows}} 帧 · 显示独立于接收",
+  "signals": "信号",
+  "signals_beyond_the_payload_value": "（{{number}} 个信号超出负载长度）",
+  "dbc_file_optional": "DBC 文件（可选）",
+  "dbc_loaded_value": "{{name}}：{{messages}} 条报文。信号仅在本页面解码用于显示；文件不会发送给服务，刷新后也不会保留。",
+  "remove_dbc": "移除 DBC",
+  "the_dbc_file_could_not_be_read": "无法读取该 DBC 文件。",
+  "the_dbc_file_exceeds_16_mib_or_the_signal_limit": "该 DBC 文件超过 16 MiB 或信号数量上限。",
+  "dbc_not_supported_value": "不支持该 DBC 文件：{{reason}}。",
+  "dbc_line_not_supported_value": "不支持 DBC 第 {{line}} 行：{{reason}}。",
+  "dbc_line_not_read_value": "无法解析 DBC 第 {{line}} 行：{{reason}}。"
 }
