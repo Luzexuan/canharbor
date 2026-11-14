@@ -77,7 +77,9 @@ canharbor --runtime-dir /tmp/canharbor-b monitor --channel CHANNEL_B \
 ```
 
 - Unplug adapter A while idle. Service A should report the channel as
-  disconnected, and reconnecting the adapter should not resume anything.
+  disconnected, and reconnecting the adapter should not resume anything. A
+  service does not reopen an adapter: stop service A, start it again with the
+  same options, and read the channel ID again before the next check.
 - Start a long `sequence send` through service A and stop **service A** with
   Ctrl-C while it runs. Frames submitted before the stop keep their submitted
   result. Requests after the stop must fail or report an unknown outcome; none
