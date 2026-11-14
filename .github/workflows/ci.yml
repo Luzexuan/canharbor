@@ -70,11 +70,16 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.4.2'
+      # Optional at runtime; installed so the python-can interface test runs.
+      - run: python -m pip install python-can==4.6.1
       - run: bun install --cwd web --frozen-lockfile
       - run: bun run --cwd web build
       - run: python scripts/test-package.py
       - run: python scripts/test-draft-release-check.py
       - run: cargo test --workspace --exclude canharbor-peak --exclude canharbor-kvaser --features canharbor-cli/slcan,canharbor-cli/web-ui --locked
+        env:
+          # The interpreter that python-can was installed into above.
+          CANHARBOR_TEST_PYTHON: python
       - run: cargo clippy --workspace --exclude canharbor-peak --exclude canharbor-kvaser --all-targets --features canharbor-cli/slcan,canharbor-cli/web-ui --locked -- -D warnings
       - run: cargo build -p canharbor-cli --features web-ui,slcan --locked
       - run: bun x --bun playwright install chromium
