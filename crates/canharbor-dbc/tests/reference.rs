@@ -220,9 +220,9 @@ fn value_tables_are_optional_and_strictly_parsed() {
             .collect::<Vec<_>>()
     };
     let data = [0xff, 0, 0, 0x80, 0x3f];
-    // Signed raw values, tabs between fields, and no terminating semicolon.
+    // Signed raw values and tabs between fields.
     assert_eq!(
-        label("VAL_\t1 S -1 \"Invalid\"\t0 \"Off\"\n", &data)[0].as_deref(),
+        label("VAL_\t1 S -1 \"Invalid\"\t0 \"Off\";\n", &data)[0].as_deref(),
         Some("Invalid")
     );
     // Runs of spaces and tabs between any two fields.
@@ -262,12 +262,20 @@ fn value_tables_are_optional_and_strictly_parsed() {
         ),
         [None, None]
     );
-    // A name that continues on the next line leaves the table out.
-    assert_eq!(label("VAL_ 1 S -1 \"two\nlines\" ;\n", &data)[0], None);
+    // A record that continues on the next line is left out whole, whether it
+    // breaks inside a name, before one, or between entries.
+    for continued in [
+        "VAL_ 1 S -1 \"two\nlines\" ;\n",
+        "VAL_ 1 S -1\n \"Invalid\" 0 \"Off\" ;\n",
+        "VAL_ 1 S -1 \"Invalid\"\n 0 \"Off\" ;\n",
+        "VAL_ 1 S -1 \"Invalid\" 0 \"Off\"\n",
+    ] {
+        assert_eq!(label(continued, &data), [None, None], "{continued}");
+    }
     for malformed in [
         "VAL_ 1 S x \"a\" ;\n",
         "VAL_ 1 S 1 a ;\n",
-        "VAL_ 1 S 1\n",
+        "VAL_ 1 S 1 ;\n",
         "VAL_ 1 S 18446744073709551616 \"a\" ;\n",
         "VAL_ 1 S -9223372036854775809 \"a\" ;\n",
     ] {

@@ -384,8 +384,9 @@ impl Database {
                 ));
             } else if keyword == "VAL_" {
                 // `VAL_ <message> <signal> <value> "<name>" ... ;`. Tables for
-                // environment variables have no message identifier, and a
-                // table whose text continues on the next line is left out.
+                // environment variables have no message identifier. A record
+                // that does not end on this line, inside a name or between
+                // fields, is left out whole rather than read in part.
                 // Fields may be separated by any run of whitespace.
                 let Some((message, after)) = field(rest) else {
                     continue;
@@ -394,7 +395,7 @@ impl Database {
                 else {
                     continue;
                 };
-                if in_string {
+                if in_string || !rest.trim_end().ends_with(';') {
                     continue;
                 }
                 let mut labels = Vec::new();

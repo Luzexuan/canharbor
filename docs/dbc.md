@@ -27,8 +27,9 @@ and extended identifiers with the same number are different messages.
   multiplexed signal is shown only when the selector equals its value.
 
 Attributes, comments, signal groups, minimum/maximum ranges, and value tables
-for environment variables are read past and not used. A value table whose text
-continues on a following line is left out. Files that use extended multiplexing
+for environment variables are read past and not used. A value table must end with its
+semicolon on the line it starts on; one that continues on a following line is
+left out whole. Files that use extended multiplexing
 (`SG_MUL_VAL_` or `m<N>M` signals) are rejected: decoding them with the simple
 rules would print wrong values. A malformed signal definition is also an error,
 reported with its line number. Files larger than 16 MiB are refused.
