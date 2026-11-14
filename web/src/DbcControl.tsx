@@ -1,7 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { useState } from "react";
-import { DbcDatabase, DbcError } from "./dbc";
+import { DbcDatabase, DbcError, hexBytes, signalText } from "./dbc";
 import { text } from "./i18n/messages";
+
+/**
+ * The text of a signal cell: the decoded signals of a frame, or a dash when
+ * the database has no message for it. Remote frames carry no data.
+ */
+export function signalCell(
+  database: DbcDatabase,
+  frame: { kind: string; id: number; extended: boolean; data_hex: string },
+): string {
+  const decoded =
+    frame.kind === "classic_remote"
+      ? null
+      : database.decode(frame.id, frame.extended, hexBytes(frame.data_hex));
+  if (!decoded) return "—";
+  return decoded.truncated
+    ? `${signalText(decoded)} ${text("main:signals_beyond_the_payload_value", { number: decoded.truncated })}`
+    : signalText(decoded);
+}
 
 /**
  * The optional DBC file of the frame monitor. `input` is the file control and

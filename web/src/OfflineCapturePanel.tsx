@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { DbcDatabase } from "./dbc";
+import { signalCell } from "./DbcControl";
 import { useTranslation } from "./i18n";
 import { errorSummary } from "./i18n/errors";
 import { LocalizedError, text } from "./i18n/messages";
@@ -10,10 +12,18 @@ import {
   type CaptureIndex,
   type OfflineCapture,
 } from "./offline";
+/**
+ * `database` adds a signal column to the event table. `dbcControl` is the
+ * file control and its messages, shown here while this view is the open one.
+ */
 export function OfflineCapturePanel({
   recordingFile,
+  database,
+  dbcControl,
 }: {
   recordingFile?: File | null;
+  database?: DbcDatabase | null;
+  dbcControl?: ReactNode;
 }) {
   useTranslation();
   const [capture, setCapture] = useState<OfflineCapture | null>(null);
@@ -133,6 +143,7 @@ export function OfflineCapturePanel({
           }}
         />
       </label>
+      {dbcControl}
       {busy && (
         <p role="status">
           {readingPage
@@ -312,6 +323,7 @@ export function OfflineCapturePanel({
                   <th>{text("offlinePanel:id_diagnostic")}</th>
                   <th>{text("offlinePanel:data")}</th>
                   <th>{text("offlinePanel:metadata")}</th>
+                  {database && <th>{text("main:signals")}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -379,6 +391,13 @@ export function OfflineCapturePanel({
                             overflow: event.overflow,
                           })}
                     </td>
+                    {database && (
+                      <td>
+                        {event.type === "frame_received"
+                          ? signalCell(database, event.frame)
+                          : "—"}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

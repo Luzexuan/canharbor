@@ -1282,7 +1282,19 @@ function App() {
           {auth && <StressPanel auth={auth} devices={devices} />}
         </div>
         <div hidden={workspace !== "offline"}>
-          <OfflineCapturePanel recordingFile={recordingFile} />
+          <OfflineCapturePanel
+            recordingFile={recordingFile}
+            database={dbc.database}
+            dbcControl={
+              // One control at a time: the live monitor has it otherwise.
+              workspace === "offline" && (
+                <>
+                  {dbc.input}
+                  {dbc.status}
+                </>
+              )
+            }
+          />
         </div>
         <div
           className="work-grid"
@@ -1397,9 +1409,9 @@ function App() {
                   <option value="tx">TX</option>
                 </select>
               </label>
-              {dbc.input}
+              {workspace === "live" && dbc.input}
             </div>
-            {dbc.status}
+            {workspace === "live" && dbc.status}
             <p id="id-filter-help">
               {text("main:id_filter_help_value", {
                 rows: MAX_ROWS,
@@ -1419,7 +1431,10 @@ function App() {
               })}
             </p>
             {monitorView === "ids" && (
-              <AggregateTable groups={visibleAggregates} />
+              <AggregateTable
+                groups={visibleAggregates}
+                database={dbc.database}
+              />
             )}
             <FrameTable
               rows={visibleRows}
