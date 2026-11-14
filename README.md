@@ -104,13 +104,14 @@ validation limits, use the [status page](docs/status.md).
 
 ## Feature guides
 
-- [Hardware selection](docs/hardware-service.md) and [device diagnostics](docs/device-diagnostics.md)
+- [Hardware selection](docs/hardware-service.md), [device diagnostics](docs/device-diagnostics.md) and [hardware validation](docs/hardware-validation.md)
 - [Channel configuration](docs/channel-configuration.md) and [transmission receipts](docs/transmission-receipts.md)
 - [Periodic tasks: CLI](docs/periodic-cli.md), [Web](docs/periodic-web.md), [API](docs/periodic-api.md)
 - [Recording](docs/capture-service.md) and [offline inspection](docs/offline-capture.md)
+- [Signal decoding from DBC files](docs/dbc.md)
 - [Bounded communication checks](docs/sequence-test.md)
 - [Stress testing](docs/stress-testing.md)
-- [Rust client](docs/rust-client.md), [C ABI](docs/c-abi.md), [Python client](python/README.md)
+- [Rust client](docs/rust-client.md), [C ABI](docs/c-abi.md), [Python client](python/README.md) and its [python-can interface](python/README.md#python-can-interface)
 
 ## License
 

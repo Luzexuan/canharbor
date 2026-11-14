@@ -11,10 +11,20 @@ behavior and may include work that has not been implemented.
 - Channel configuration, capability queries, exclusive sessions, expiring control
   leases and generation fencing. Refresh and reconnect do not resume sending.
 - CLI and browser monitoring, one-shot transmission, request receipts and bounded
-  periodic tasks.
+  periodic tasks. The CLI accepts `cansend` frame notation, prints events as
+  JSON or text, filters by identifier and generates shell completions.
+- Signal decoding in `monitor --format text` from a [DBC file](dbc.md),
+  including value tables. The supported subset is listed on that page; the
+  browser does not decode signals.
 - Service-owned recordings, downloads and a bounded browser offline viewer.
+  `capture export` writes a recording as a can-utils candump log; ASC and BLF
+  are not supported.
 - Rust client, C ABI and Python wrapper, including optional native streaming and
-  capture download extensions.
+  capture download extensions. The Python package registers a
+  [python-can interface](../python/README.md#python-can-interface) and is
+  installed from the source tree; no wheels are published.
+- Optional request and stream logging on the service's standard error
+  (`serve --log-requests`), for diagnosing a client or a dropped subscription.
 - Stress plans, multi-flow execution, explicit criteria, persisted evidence,
   read-only recovery, FD/RTT, adaptive plans and multi-host coordination.
 - Opt-in gs_usb, SLCAN, PEAK and Kvaser backends. Native vendor backends require
@@ -39,7 +49,11 @@ restores transmission.
 
 Stress evidence, receiver completeness and achieved workload are separate facts.
 The checked-in [benchmark records](benchmarks/) include failed runs; stable
-throughput still requires repeated validation on a controlled host. Virtual-clock
+throughput still requires repeated validation on a controlled host. The tests
+that run real-time plans to completion are outside the per-commit checks and run
+in a separate nightly workflow, because their result depends on host scheduling;
+a run there may repeat a case whose only failure is slots the host skipped.
+Virtual-clock
 long runs do not establish 24–72 hours of real elapsed-time reliability. Physical
 FD/BRS, external SSH/network failures, USB unplug/sleep behavior and independent
 analyzer measurements require separate hardware validation.
