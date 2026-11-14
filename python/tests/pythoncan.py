@@ -78,8 +78,15 @@ with CanHarborBus("virtual:1", fd=True, **common) as listener, \
     expect(can.CanOperationError, lambda: sender.send(
         can.Message(arbitration_id=1, is_extended_id=False, is_fd=True, data=bytes(9), check=False)))
 
-# Non-blocking polls read the stream, and control is renewed while a batch
-# that is already buffered is being consumed.
+def wait_for(condition, what):
+    deadline = time.monotonic() + 30
+    while not condition():
+        assert time.monotonic() < deadline, f"timed out waiting for {what}"
+        time.sleep(0.01)
+
+
+# Non-blocking polls deliver frames in order, and control is renewed while
+# frames that are already buffered are being consumed.
 with CanHarborBus("virtual:1", **common) as listener, \
         CanHarborBus("virtual:0", active=True, **common) as sender:
     for value in range(3):
@@ -98,68 +105,51 @@ with CanHarborBus("virtual:1", **common) as listener, \
     listener._client.renew = lambda *args: (renewals.append(args), renew(*args))[1]
     for value in range(2):
         sender.send(can.Message(arbitration_id=0x300 + value, is_extended_id=False))
-    assert listener.recv(timeout=10.0).arbitration_id == 0x300
-    # Make sure the second frame is buffered before the next call.
-    deadline = time.monotonic() + 30
-    while not listener._pending and time.monotonic() < deadline:
-        batch = listener._stream.next(timeout_ms=100)
-        if batch and batch.get("type") == "events":
-            listener._pending.extend(batch["events"])
-    assert listener._pending
+    wait_for(lambda: len(listener._pending) == 2, "two buffered frames")
+    assert listener.recv(timeout=0).arbitration_id == 0x300
     listener._renewed -= 6  # as if the previous frame took six seconds to process
     before = len(renewals)
-    assert listener.recv(timeout=10.0).arbitration_id == 0x301
+    assert listener.recv(timeout=0).arbitration_id == 0x301
     assert len(renewals) == before + 1, renewals
 
-# A program that only sends still services its subscription, and what arrives
-# meanwhile is kept for a later recv().
+# A bus that only sends keeps its subscription. The service disconnects a
+# subscriber that does not read for two seconds while it has events to deliver,
+# and on macOS the local socket holds only 8 KiB of them. The peer's frames
+# and the echoes of this bus's own frames exceed that several times over here.
 with CanHarborBus("virtual:1", active=True, **common) as peer, \
         CanHarborBus("virtual:0", active=True, **common) as sender:
     peer.send(can.Message(arbitration_id=0x400, is_extended_id=False))
-    serviced = sender._serviced
-    sender._serviced -= 6  # as if the last stream read was six seconds ago
-    deadline = time.monotonic() + 30
-    while not sender._pending and time.monotonic() < deadline:
-        sender.send(can.Message(arbitration_id=0x401, is_extended_id=False))
-        sender._serviced -= 6
-    assert sender._pending, "send() did not read the stream"
-    assert sender._serviced != serviced - 6
-    assert sender.recv(timeout=0).arbitration_id == 0x400
+    started = time.monotonic()
+    rounds = 0
+    while time.monotonic() - started < 3.5:
+        sender.send(can.Message(arbitration_id=0x401, is_extended_id=False, data=bytes(8)))
+        peer.send(can.Message(arbitration_id=0x402, is_extended_id=False, data=bytes(8)))
+        peer.recv(timeout=0)  # the peer is not under test; keep its buffer small
+        rounds += 1
+        time.sleep(0.03)  # stay under the service's transmit rate limit
+    assert rounds > 30, rounds
+    # Nothing was read by the program so far; everything is still delivered.
+    first = sender.recv(timeout=10.0)
+    assert first is not None and first.arbitration_id == 0x400
+    received = 1
+    while received < rounds + 1:
+        message = sender.recv(timeout=10.0)
+        assert message is not None and message.arbitration_id == 0x402, (received, message)
+        received += 1
+    assert sender.recv(timeout=0) is None
 
-# The same holds for a receiver that is slow to consume what it has buffered:
-# returning a buffered frame still services the stream when it is due.
-with CanHarborBus("virtual:1", **common) as listener, \
-        CanHarborBus("virtual:0", active=True, **common) as sender:
-    for value in range(2):
-        sender.send(can.Message(arbitration_id=0x500 + value, is_extended_id=False))
-    deadline = time.monotonic() + 30
-    while len(listener._pending) < 2 and time.monotonic() < deadline:
-        listener._read_stream(100)
-    assert len(listener._pending) == 2
-    sender.send(can.Message(arbitration_id=0x502, is_extended_id=False))
-    time.sleep(0.3)
-    listener._serviced -= 6
-    stale = listener._serviced
-    assert listener.recv(timeout=0).arbitration_id == 0x500
-    assert listener._serviced > stale, "recv() returned a buffered frame without reading the stream"
-    # Order is kept whether or not the third frame had arrived by then.
-    assert [listener.recv(timeout=10.0).arbitration_id for _ in range(2)] == [0x501, 0x502]
-
-# send() on one thread and recv() on another never read the stream at once.
+# send() on one thread and recv() on another.
 with CanHarborBus("virtual:1", active=True, **common) as peer, \
         CanHarborBus("virtual:0", active=True, **common) as bus:
     failures, received = [], []
-    sent = threading.Event()
-    expected = [0]
+    rounds = 40
 
     def receive():
         # Keep reading until every frame the peer sent has arrived. The wait is
         # bounded generously: a loaded host must not turn it into a failure.
         try:
             deadline = time.monotonic() + 60
-            while time.monotonic() < deadline:
-                if sent.is_set() and received.count(0x601) >= expected[0]:
-                    return
+            while received.count(0x601) < rounds and time.monotonic() < deadline:
                 message = bus.recv(timeout=0.2)
                 if message is not None:
                     received.append(message.arbitration_id)
@@ -168,19 +158,23 @@ with CanHarborBus("virtual:1", active=True, **common) as peer, \
 
     reader = threading.Thread(target=receive)
     reader.start()
-    # A fixed number of rounds, so the amount of overlap does not depend on
-    # how fast the host is.
-    rounds = 40
     for _ in range(rounds):
-        bus._serviced -= 6  # make every send() want to service the stream
         bus.send(can.Message(arbitration_id=0x600, is_extended_id=False))
         peer.send(can.Message(arbitration_id=0x601, is_extended_id=False))
         time.sleep(0.03)  # stay under the service's transmit rate limit
-    expected[0] = rounds
-    sent.set()
     reader.join()
     assert not failures, failures
     assert received.count(0x601) == rounds, (rounds, len(received))
+
+# A stream that ends is reported by recv(), after the frames already buffered.
+with CanHarborBus("virtual:1", **common) as listener, \
+        CanHarborBus("virtual:0", active=True, **common) as sender:
+    sender.send(can.Message(arbitration_id=0x700, is_extended_id=False))
+    wait_for(lambda: len(listener._pending) == 1, "one buffered frame")
+    listener._stream.close()
+    wait_for(lambda: listener._stream_error is not None, "the reader to stop")
+    assert listener.recv(timeout=0).arbitration_id == 0x700
+    expect(can.CanOperationError, lambda: listener.recv(timeout=0))
 
 # Both channels are free again after the buses were shut down.
 with CanHarborBus("virtual:0", **common), CanHarborBus("virtual:1", **common):

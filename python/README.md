@@ -148,12 +148,16 @@ The interface keeps the service's rules rather than python-can's usual defaults:
   listen-only bus raises `CanOperationError`; it does not change the mode.
 - Each bus opens one session and takes control of its channel. A channel that
   already has a session cannot be opened a second time.
-- Control is renewed from `send()` and `recv()` only, with no background thread.
-  A program that calls neither for about 15 seconds loses control and the
-  channel stops; the next call raises `CanOperationError`. A bus that only sends
-  must send, or call `recv()`, at least that often.
-- Frames that arrive while a program only sends are kept for a later `recv()`,
-  up to 16384 events; beyond that the oldest are discarded.
+- Control is renewed from `send()` and `recv()` only. A program that calls
+  neither for about 15 seconds loses control and the channel stops; the next
+  call raises `CanOperationError`.
+- A background thread reads the event stream into a buffer. It is needed
+  because the service disconnects a subscriber that stops reading while traffic
+  continues. The thread only reads: it does not renew control and does not
+  send.
+- Frames that arrive while the program is not calling `recv()` are kept, up to
+  16384 events; beyond that the oldest are discarded. If the stream ends,
+  `recv()` returns the frames already buffered and then raises.
 - The service limits each session to 100 transmitted frames per second with a
   burst of 20. A faster `send()` loop gets `CanOperationError`.
 - `send()` and `recv()` may be called from different threads.
