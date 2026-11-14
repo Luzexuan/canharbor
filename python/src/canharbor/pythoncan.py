@@ -10,6 +10,11 @@ The bus opens one session on the channel, acquires control and starts it. It
 keeps the service's rules: a bus is listen-only unless `active=True`, nothing is
 retried, and control is renewed only from `send()` and `recv()`. A program that
 stops calling them lets the lease expire, which stops the channel.
+
+A background thread reads the event stream into a bounded buffer. The service
+disconnects a subscriber that stops reading while traffic continues, so the
+stream cannot wait for `recv()`. The thread only reads: it never renews
+control and never sends.
 """
 from __future__ import annotations
 
@@ -26,14 +31,9 @@ from . import CanHarborError, Client
 __all__ = ["CanHarborBus"]
 
 _RENEW_SECONDS = 5.0
-# The service drops a subscription that has not answered its keep-alive for 30
-# seconds; the stream is only serviced while it is being read.
-_SERVICE_SECONDS = 5.0
 # Frames buffered while the program is not calling recv(). Older ones are
 # discarded first, as a full driver receive buffer would.
 _PENDING_LIMIT = 16384
-# Upper bound on stream messages read by one send() while catching up.
-_SERVICE_READS = 256
 
 
 class CanHarborBus(can.BusABC):
@@ -53,12 +53,12 @@ class CanHarborBus(can.BusABC):
         self._fd = bool(fd)
         self._own = bool(receive_own_messages)
         self._pending: deque = deque(maxlen=_PENDING_LIMIT)
-        # The native stream allows one reader at a time. send() and recv() may
-        # run on different threads, for example with python-can's periodic
-        # sender, so every read and every use of the buffer holds this lock.
-        self._reading = threading.Lock()
+        # Guards the buffer and the stream state shared with the reader thread.
+        self._arrived = threading.Condition()
+        self._stream_error: Optional[str] = None
+        self._closing = False
+        self._reader: Optional[threading.Thread] = None
         self._renewed = 0.0
-        self._serviced = 0.0
         self.channel_info = f"CANHarbor {channel}"
         try:
             self._client = Client(runtime_dir, library=library)
@@ -70,10 +70,13 @@ class CanHarborBus(can.BusABC):
             # Subscribe before starting so that no frame precedes the stream.
             self._stream = self._client.subscribe(self._session)
             hello = self._stream.next(timeout_ms=1000)
-            self._serviced = time.monotonic()
             if not hello or hello.get("type") != "hello":
                 raise can.CanInitializationError("CANHarbor event stream did not start")
             self._client.start(self._session, self._generation)
+            self._reader = threading.Thread(
+                target=self._read_stream, args=(self._stream,),
+                name="canharbor-bus-stream", daemon=True)
+            self._reader.start()
         except (CanHarborError, ValueError, OSError) as error:
             self._teardown()
             raise can.CanInitializationError(f"cannot open CANHarbor channel {channel}: {error}") from error
@@ -93,68 +96,55 @@ class CanHarborBus(can.BusABC):
 
     def _recv_internal(self, timeout: Optional[float]):
         deadline = None if timeout is None else time.monotonic() + timeout
-        polled = False
         while True:
-            # Renew and service the stream on every call, including while a
-            # buffered batch is being drained: a slow consumer can spend longer
-            # than the lease, or than the keep-alive allowance, on one batch.
+            # Renew on every pass: a consumer can spend longer than the lease
+            # on frames that are already buffered.
             self._renew()
-            self._service()
-            with self._reading:
+            with self._arrived:
                 while self._pending:
                     message = self._message(self._pending.popleft())
                     if message is not None:
                         return message, False
+                if self._stream_error is not None:
+                    raise can.CanOperationError(self._stream_error)
                 remaining = 1.0 if deadline is None else deadline - time.monotonic()
-                # A zero or expired timeout still polls the stream once, so that
-                # non-blocking callers receive frames that are already waiting.
-                if remaining <= 0 and polled:
+                if remaining <= 0:
                     return None, False
-                polled = True
-                # Short reads, so that another thread waits briefly for the lock.
-                self._read_stream(max(1, min(100, int(remaining * 1000))))
+                # Wake at least once a second so that control is renewed while
+                # waiting without a timeout.
+                self._arrived.wait(min(remaining, 1.0))
 
-    def _service(self) -> None:
-        """Now and then, read everything that is waiting on the stream.
-
-        The service's keep-alive is answered only while the stream is read,
-        and it is queued behind the frames, including echoes of this bus's own
-        transmissions, so one read is not enough. Frames are kept for recv().
-        """
-        if time.monotonic() - self._serviced < _SERVICE_SECONDS:
-            return
-        # If another thread is reading, the stream is being serviced already.
-        if not self._reading.acquire(blocking=False):
-            return
-        try:
-            for _ in range(_SERVICE_READS):
-                if not self._read_stream(1):
-                    break
-        finally:
-            self._reading.release()
-
-    def _read_stream(self, timeout_ms: int) -> bool:
-        """Read one stream message, keeping any frames for later recv() calls.
-
-        Returns whether a message was read. The caller holds `_reading`.
-        """
-        try:
-            batch = self._stream.next(timeout_ms=timeout_ms)
-        except CanHarborError as error:
-            raise can.CanOperationError(f"CANHarbor event stream failed: {error}") from error
-        self._serviced = time.monotonic()
-        if batch is None:
-            return False
-        kind = batch.get("type")
-        if kind == "events":
-            self._pending.extend(batch.get("events", ()))
-        elif kind == "session_fault":
-            raise can.CanOperationError(f"CANHarbor channel fault: {batch.get('code')}")
-        elif kind == "resume_unavailable":
-            raise can.CanOperationError("CANHarbor event stream history is unavailable")
-        # A gap means observations were dropped for this subscriber; later
-        # frames are still valid, so reception continues.
-        return True
+    def _read_stream(self, stream) -> None:
+        """Reader thread: move stream messages into the buffer until the stream ends."""
+        error = None
+        while not self._closing:
+            try:
+                batch = stream.next(timeout_ms=200)
+            except CanHarborError as failure:
+                if not self._closing:
+                    error = f"CANHarbor event stream failed: {failure}"
+                break
+            if batch is None:
+                continue
+            kind = batch.get("type")
+            if kind == "events":
+                with self._arrived:
+                    self._pending.extend(batch.get("events", ()))
+                    self._arrived.notify_all()
+            elif kind == "session_fault":
+                error = f"CANHarbor channel fault: {batch.get('code')}"
+                break
+            elif kind == "resume_unavailable":
+                error = "CANHarbor event stream history is unavailable"
+                break
+            # A gap means observations were dropped for this subscriber; later
+            # frames are still valid, so reception continues.
+        with self._arrived:
+            # Frames already buffered are still delivered before the error.
+            self._stream_error = error if error is not None else self._stream_error
+            if error is None and not self._closing:
+                self._stream_error = "CANHarbor event stream ended"
+            self._arrived.notify_all()
 
     def _message(self, event: dict) -> Optional[can.Message]:
         if event.get("type") != "frame_received":
@@ -196,8 +186,6 @@ class CanHarborBus(can.BusABC):
                      "data_hex": bytes(msg.data).hex(), "brs": bool(msg.bitrate_switch)}
         frame.update(id=msg.arbitration_id, extended=bool(msg.is_extended_id))
         self._renew()
-        # A program that only sends never reads the stream.
-        self._service()
         request = uuid.uuid4().hex
         try:
             self._client.submit(self._session, self._generation, request_id=request, frame=frame)
@@ -213,8 +201,12 @@ class CanHarborBus(can.BusABC):
         stream, self._stream = self._stream, None
         if client is None:
             return
+        # Closing the stream interrupts the reader's pending read.
+        self._closing = True
+        reader, self._reader = self._reader, None
         for step in (
             lambda: stream and stream.close(),
+            lambda: reader and reader.join(timeout=5),
             lambda: self._session and self._generation
             and client.request("DELETE", f"/sessions/{self._session}", {}, generation=self._generation),
             client.close,
