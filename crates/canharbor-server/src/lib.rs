@@ -948,13 +948,13 @@ async fn stream_loop(
                 if last_pong.elapsed() > Duration::from_secs(30) { break "no keep-alive reply for 30 s".into(); }
                 if s.runtime.get(&id).await.is_err() { break "session no longer exists".into(); }
                 if let Some(c) = &identity.cookie && !s.browser_valid(c).await { break "browser session ended".into(); }
-                if !matches!(tokio::time::timeout(Duration::from_secs(2), tx.send(Message::Ping(vec![].into()))).await, Ok(Ok(()))) { break "keep-alive not written within 2 s".into(); }
+                if let Err(why) = write_ws(&mut tx, Message::Ping(vec![].into())).await { break format!("keep-alive {why}"); }
             }
             incoming = rx.next() => {
                 match incoming {
                     Some(Ok(Message::Pong(_))) => last_pong = Instant::now(),
                     Some(Ok(Message::Ping(p))) => {
-                        if !matches!(tokio::time::timeout(Duration::from_secs(2), tx.send(Message::Pong(p))).await, Ok(Ok(()))) { break "keep-alive reply not written within 2 s".into(); }
+                        if let Err(why) = write_ws(&mut tx, Message::Pong(p)).await { break format!("keep-alive reply {why}"); }
                     }
                     Some(Ok(Message::Text(t))) if t == "ping" => last_pong = Instant::now(),
                     Some(Ok(Message::Close(_))) => break "client closed the stream".into(),
@@ -984,9 +984,9 @@ async fn stream_loop(
                 }
                 if lagged > 0 {
                     let gap = dto::StreamMessage::Gap{cause:dto::GapCause::SubscriberLag,count:lagged.into()};
-                    if !send_ws(&mut tx, gap).await { break "gap notice not written within 2 s".into(); }
+                    if let Err(why) = send_ws(&mut tx, gap).await { break format!("gap notice {why}"); }
                 }
-                if !events.is_empty() && !send_ws(&mut tx, dto::StreamMessage::Events{server_instance_id:s.instance.clone(),session_epoch:id.clone(),events}).await { break "events not written within 2 s".into(); }
+                if !events.is_empty() && let Err(why) = send_ws(&mut tx, dto::StreamMessage::Events{server_instance_id:s.instance.clone(),session_epoch:id.clone(),events}).await { break format!("events {why}"); }
                 if closed {
                             if let Ok(view)=s.runtime.get(&id).await && let Some(fault)=view.fault {
                                 let state=if fault==canharbor_core::BackendFault::Disconnected {dto::SessionState::Disconnected}else{dto::SessionState::Faulted};
@@ -1031,18 +1031,27 @@ fn visible_notice(notice: &canharbor_core::runtime::Notice, filter: &dto::Filter
         }
     }
 }
+/// Write one message within two seconds. The error says whether the time ran
+/// out, which means the client is not reading, or the transport failed.
+async fn write_ws(
+    tx: &mut futures_util::stream::SplitSink<WebSocket, Message>,
+    message: Message,
+) -> Result<(), String> {
+    match tokio::time::timeout(Duration::from_secs(2), tx.send(message)).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(format!("write failed: {error}")),
+        Err(_) => Err("not written within 2 s".into()),
+    }
+}
 async fn send_ws<T: Serialize>(
     tx: &mut futures_util::stream::SplitSink<WebSocket, Message>,
     value: T,
-) -> bool {
-    matches!(
-        tokio::time::timeout(
-            Duration::from_secs(2),
-            tx.send(Message::Text(serde_json::to_string(&value).unwrap().into()))
-        )
-        .await,
-        Ok(Ok(()))
+) -> Result<(), String> {
+    write_ws(
+        tx,
+        Message::Text(serde_json::to_string(&value).unwrap().into()),
     )
+    .await
 }
 #[cfg(feature = "web-ui")]
 #[derive(rust_embed::RustEmbed)]
