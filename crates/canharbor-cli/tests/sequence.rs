@@ -45,6 +45,10 @@ async fn setup() -> (PathBuf, Arc<VirtualBus>, RunningServer) {
     (root, bus, service)
 }
 async fn receiver(root: &Path, extra: &[&str]) -> tokio::process::Child {
+    receiver_for(root, extra, "3000").await
+}
+/// A receiver that gives up `timeout_ms` after it has opened its session.
+async fn receiver_for(root: &Path, extra: &[&str], timeout_ms: &str) -> tokio::process::Child {
     let mut args = vec![
         "sequence",
         "receive",
@@ -57,7 +61,7 @@ async fn receiver(root: &Path, extra: &[&str]) -> tokio::process::Child {
         "--count",
         "4",
         "--timeout-ms",
-        "3000",
+        timeout_ms,
     ];
     args.extend_from_slice(extra);
     let mut child = command(root, &args)
@@ -143,48 +147,68 @@ async fn classic_and_fd_sequences_cross_virtual_channels_without_hardware() {
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn missing_duplicate_and_out_of_order_sequences_are_reported() {
-    let (root, _, service) = setup().await;
-    let child = receiver(&root, &[]).await;
-    // Send crafted sequence traffic through the ordinary authenticated API.
-    let client = canharbor_client::LocalClient::new(root.clone()).unwrap();
-    for sequence in [0, 2, 2, 1] {
-        let payload = format!("ABCDEF01{sequence:08X}");
-        let result = output(
-            &root,
-            &[
-                "send",
-                "--channel",
-                "virtual:0",
-                "--active",
-                "--id",
-                "123",
-                "--data",
-                &payload,
-            ],
-        )
-        .await;
-        assert!(result.status.success());
+    // The receiver never sees a fourth sequence number, so it runs until its
+    // deadline, and the four `send` processes have to finish before that.
+    // With the other tests of this file running they take about three seconds
+    // together, so the receiver gets eight. The deadline is counted from a
+    // point after `before`: sends that finish within SENDING of it were in
+    // time. A slower attempt shows nothing about the receiver and is repeated.
+    const SENDING: Duration = Duration::from_millis(7000);
+    for attempt in 1..=3 {
+        let (root, _, service) = setup().await;
+        let before = std::time::Instant::now();
+        let child = receiver_for(&root, &[], "8000").await;
+        // Send crafted sequence traffic through the ordinary authenticated API.
+        let client = canharbor_client::LocalClient::new(root.clone()).unwrap();
+        for sequence in [0, 2, 2, 1] {
+            let payload = format!("ABCDEF01{sequence:08X}");
+            let result = output(
+                &root,
+                &[
+                    "send",
+                    "--channel",
+                    "virtual:0",
+                    "--active",
+                    "--id",
+                    "123",
+                    "--data",
+                    &payload,
+                ],
+            )
+            .await;
+            assert!(result.status.success());
+        }
+        let sending = before.elapsed();
+        let received = finish(child).await;
+        let in_time = sending < SENDING;
+        if in_time {
+            assert_eq!(received.status.code(), Some(6));
+            let rx = report(&received);
+            assert_eq!(rx["received_unique"], 3);
+            assert_eq!(rx["missing"], 1);
+            assert_eq!(rx["duplicates"], 1);
+            assert_eq!(rx["out_of_order"], 1);
+            assert_eq!(rx["state"], "incomplete");
+            assert_eq!(rx["passed"], false);
+        }
+        // Whatever the timing, nothing is left running.
+        assert!(
+            client
+                .request("GET", "/sessions", Value::Null, None)
+                .await
+                .unwrap()["sessions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|s| s["state"] != "running")
+        );
+        clean(root, service).await;
+        if in_time {
+            return;
+        }
+        eprintln!("attempt {attempt}: sending took {sending:?}; repeating");
     }
-    let received = finish(child).await;
-    assert_eq!(received.status.code(), Some(6));
-    let rx = report(&received);
-    assert_eq!(rx["received_unique"], 3);
-    assert_eq!(rx["missing"], 1);
-    assert_eq!(rx["duplicates"], 1);
-    assert_eq!(rx["out_of_order"], 1);
-    assert_eq!(rx["state"], "incomplete");
-    assert_eq!(rx["passed"], false);
-    assert!(
-        client
-            .request("GET", "/sessions", Value::Null, None)
-            .await
-            .unwrap()["sessions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|s| s["state"] != "running")
-    );
-    clean(root, service).await;
+    panic!("the host never completed four sends within {SENDING:?}");
 }
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
