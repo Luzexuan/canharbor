@@ -1,4 +1,8 @@
 {
+  "classic_crc32_v1": "经典 CRC32-v1（8 字节）",
+  "crc_run_uuid": "CRC 测试 UUID",
+  "crc_source": "CRC 来源编号",
+  "crc_wire_scope": "每个 8 字节数据帧包含序号，以及绑定测试 UUID 和来源的 IEEE CRC32。完整 RX 复算需要 sample_every=1，并受现有证据预算限制。",
   "additional_flows_must_be_a_json_array_of_objects": "附加流必须是由对象组成的 JSON 数组",
   "each_flow_needs_a_name_sender_numeric_can_id": "每个流需要名称、发送端、数值 CAN ID 和接收端列表。可用“添加反向流”创建完整计划。",
   "stress_testing": "压力测试",

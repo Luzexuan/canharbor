@@ -233,6 +233,9 @@ impl Report {
     /// A transport-independent check used by replay and multi-host coordination.
     /// Does not assert that a remote host's evidence is authentic or locally available.
     pub fn passing_invariants(&self) -> bool {
+        if self.plan.has_classic_crc() && self.version < 12 {
+            return false;
+        }
         if self.plan.adaptive.is_some() {
             return self.adaptive_passing_invariants();
         }
@@ -288,6 +291,8 @@ impl Report {
             self.receivers.iter().map(|r| &r.channel).collect();
         let expected: std::collections::BTreeSet<_> = self.plan.receivers.iter().collect();
         self.resources_consistent()
+            && (!self.plan.traffic.is_classic_crc()
+                || self.integrity == self.plan.traffic.integrity())
             && (self.plan.shape.is_uniform() || self.version >= 10)
             && self
                 .load

@@ -125,7 +125,9 @@ fn status(host: &Host, group: &str, operation: &str, value: &Value) -> Result<Co
             || report.plan_hash != plan.fingerprint()
             || report.state != result.state
             || report.version
-                < if plan.requires_resource_v11() {
+                < if plan.has_classic_crc() {
+                    12
+                } else if plan.requires_resource_v11() {
                     11
                 } else if plan.requires_load_v10() {
                     10
@@ -278,6 +280,7 @@ fn parse(m: Value) -> Result<(String, u64, Vec<Host>), Failure> {
     let mut producers = std::collections::HashSet::new();
     let mut bus_settings = std::collections::HashMap::new();
     let mut tags = std::collections::HashMap::<u32, (String, Plan, bool)>::new();
+    let mut crc_identities = std::collections::HashSet::new();
     for node in nodes {
         if node.as_object().is_none_or(|o| {
             o.keys().any(|k| {
@@ -360,6 +363,11 @@ fn parse(m: Value) -> Result<(String, u64, Vec<Host>), Failure> {
             }
         }
         for flow in plan.identity_plans() {
+            if let Some((run_uuid, source)) = flow.traffic.classic_crc_identity()
+                && !crc_identities.insert((bus.to_owned(), run_uuid.to_owned(), source))
+            {
+                return Err("same-bus Classic CRC32-v1 source identity is reused".into());
+            }
             let role = flow.rtt.as_ref().map(|r| r.role);
             if let Some((prior_bus, prior, paired)) = tags.get_mut(&flow.run_tag) {
                 if *paired
@@ -438,7 +446,9 @@ async fn execute_group(
         let sent: Plan = serde_json::from_value(hosts[i].plan.clone())?;
         if !v.valid
             || v.version
-                < if sent.requires_resource_v11() {
+                < if sent.has_classic_crc() {
+                    12
+                } else if sent.requires_resource_v11() {
                     11
                 } else if sent.requires_load_v10() {
                     10
@@ -641,6 +651,29 @@ mod tests {
         );
         m["hosts"][0]["plan"]["traffic"]["checkpoint_can_id"] = 295.into();
         assert!(parse(m).is_ok());
+    }
+    #[test]
+    fn classic_crc_identities_and_v12_reports_are_required_before_commit() {
+        let mut m = manifest();
+        for index in 0..2 {
+            m["hosts"][index]["plan"]["traffic"] = json!({"format":"classic_crc32_v1","run_uuid":"00112233-4455-4677-8899-aabbccddeeff","source":0});
+        }
+        assert!(
+            parse(m.clone())
+                .unwrap_err()
+                .to_string()
+                .contains("source identity")
+        );
+        m["hosts"][1]["plan"]["traffic"]["source"] = 1.into();
+        let (group, _, mut hosts) = parse(m).unwrap();
+        let p: Plan = serde_json::from_value(hosts[0].plan.clone()).unwrap();
+        hosts[0].plan = json!({"plan_hash":p.fingerprint(),"plan":p});
+        let report =
+            canharbor_stress::Report::initial(&p, true, uuid::Uuid::new_v4().to_string()).unwrap();
+        let mut value = json!({"group_id":group,"state":"arming","token":null,"expires_in_ms":1000,"run_id":report.id,"report":report,"server_instance_id":uuid::Uuid::new_v4().to_string(),"clock_quality":"unsynchronized; no cross-host one-way latency"});
+        assert!(status(&hosts[0], &group, "commit", &value).is_ok());
+        value["report"]["version"] = 11.into();
+        assert!(status(&hosts[0], &group, "commit", &value).is_err());
     }
     #[test]
     fn adaptive_reserves_all_derived_step_tags_before_any_prepare() {

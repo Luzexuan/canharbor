@@ -16,6 +16,86 @@ use tower::ServiceExt;
 // writing/fsyncing evidence. Concurrent stress fixtures interfere with those
 // measurements; isolate cases while retaining their strict workload/loss checks.
 static TIMED_CASE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
+
+#[tokio::test]
+async fn classic_crc_v12_schema_evidence_and_restart_are_complete_and_read_only() {
+    let _isolation = TIMED_CASE.acquire().await.unwrap();
+    let root = std::env::temp_dir().join(format!("ch-classic-crc-{}", uuid::Uuid::new_v4()));
+    let runtime = Runtime::new(Arc::new(VirtualBus::default()));
+    let state = AppState::with_capture_dir(
+        runtime.clone(),
+        "http://127.0.0.1:32180".into(),
+        true,
+        Some(root.clone()),
+    );
+    let app = router(state.clone(), true);
+    let mut plan: Value =
+        serde_json::from_str(include_str!("../../../examples/stress/classic-crc32.json")).unwrap();
+    plan["count"] = 2.into();
+    plan["fps"] = 2.into();
+    let (status, valid) = call(&app, "POST", "/api/v1/stress/validate", plan.clone()).await;
+    assert_eq!(status, StatusCode::OK, "{valid}");
+    assert_eq!(valid["version"], 12);
+    common::validate("StressValidation", &valid);
+    let mut invalid = plan.clone();
+    invalid["traffic"]["run_uuid"] = "not-a-uuid".into();
+    assert_eq!(
+        call(&app, "POST", "/api/v1/stress/validate", invalid)
+            .await
+            .0,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert!(runtime.list().await.is_empty());
+    let (status,start)=call(&app,"POST","/api/v1/stress/runs",json!({"client_request_id":"crc-v12","plan":plan,"plan_hash":valid["plan_hash"],"active":true})).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{start}");
+    let path = format!("/api/v1/stress/runs/{}", start["id"].as_str().unwrap());
+    let report = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let (_, r) = call(&app, "GET", &path, Value::Null).await;
+            if r["state"] == "completed" {
+                break r;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    common::validate("StressReport", &report);
+    assert_eq!(report["verdict"], "pass", "{report}");
+    assert_eq!(report["version"], 12);
+    assert_eq!(report["integrity"], "crc32_ieee_sequence_v1");
+    assert_eq!(report["recovery"]["status"], "verified");
+    assert_eq!(report["receivers"][0]["unique"], 2);
+    assert_eq!(report["receivers"][0]["short_sequence_only"], 0);
+    let (_, artifacts) = call(&app, "GET", &format!("{path}/artifacts"), Value::Null).await;
+    assert!(
+        artifacts["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["name"].as_str().unwrap().starts_with("samples-"))
+    );
+    drop(app);
+    drop(state);
+    let fresh = Runtime::new(Arc::new(VirtualBus::default()));
+    let reopened = router(
+        AppState::with_capture_dir(
+            fresh.clone(),
+            "http://127.0.0.1:32180".into(),
+            true,
+            Some(root.clone()),
+        ),
+        true,
+    );
+    let (status, recovered) = call(&reopened, "GET", &path, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{recovered}");
+    assert_eq!(recovered["recovery"]["status"], "verified");
+    assert_eq!(recovered["receivers"], report["receivers"]);
+    assert!(fresh.list().await.is_empty());
+    drop(reopened);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 async fn call(app: &Router, method: &str, path: &str, body: Value) -> (StatusCode, Value) {
     let response = app
         .clone()
@@ -1267,7 +1347,7 @@ async fn classic_pattern_raw_evidence_replays_after_restart_and_tampered_control
     p["evidence"] = json!({"sample_every":1,"max_bytes":268435456,"segment_bytes":4194304});
     let (status, v) = call(&app, "POST", "/api/v1/stress/validate", p.clone()).await;
     assert_eq!(status, StatusCode::OK, "{v}");
-    assert_eq!(v["version"], 11);
+    assert_eq!(v["version"], 12);
     common::validate("StressValidation", &v);
     let (_, start, final_report) = clean_run(
         &app,
@@ -1360,7 +1440,7 @@ async fn adaptive_steps_freeze_selection_and_recover_without_resubmitting() {
     let (code, v) = call(&app, "POST", "/api/v1/stress/validate", p.clone()).await;
     assert_eq!(code, StatusCode::OK, "{v}");
     common::validate("StressValidation", &v);
-    assert_eq!(v["version"], 11);
+    assert_eq!(v["version"], 12);
     assert!(rt.list().await.is_empty());
     let request =
         json!({"client_request_id":"adaptive","plan_hash":v["plan_hash"],"active":true,"plan":p});
@@ -1474,7 +1554,7 @@ async fn sliding_queue_evidence_persists_and_recovers_without_opening_devices() 
     p["queues"] = json!({"sample_every":3});
     p["evidence"] = json!({"sample_every":1,"max_bytes":268435456,"segment_bytes":4096});
     let (_, v) = call(&app, "POST", "/api/v1/stress/validate", p.clone()).await;
-    assert_eq!(v["version"], 11, "{v}");
+    assert_eq!(v["version"], 12, "{v}");
     assert!(rt.list().await.is_empty());
     let (code, start) = call(
         &app,

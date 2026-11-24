@@ -156,6 +156,7 @@ impl Plan {
             }
         }
         let mut tags = BTreeSet::new();
+        let mut crc_identities = BTreeSet::new();
         let mut ids = BTreeSet::new();
         let mut data = None;
         let mut tracking = 0u64;
@@ -167,6 +168,13 @@ impl Plan {
         let mut quantum = 0;
         for (_, p) in self.flow_plans() {
             let c = p.compile()?;
+            if let Some((run_uuid, source)) = p.traffic.classic_crc_identity()
+                && !crc_identities.insert((run_uuid.to_owned(), source))
+            {
+                return Err(
+                    "each Classic CRC32-v1 flow needs a distinct run_uuid/source identity".into(),
+                );
+            }
             if !tags.insert(p.run_tag) {
                 return Err("each local flow needs a distinct run_tag".into());
             }
@@ -943,7 +951,9 @@ impl Report {
             .into_iter()
             .collect::<BTreeMap<_, _>>();
         self.version
-            >= if self.plan.requires_resource_v11() {
+            >= if self.plan.has_classic_crc() {
+                12
+            } else if self.plan.requires_resource_v11() {
                 11
             } else if self.plan.requires_load_v10() {
                 10

@@ -217,7 +217,7 @@ pub(super) async fn validate(
     Ok(Json(Validation {
         load_budget: p.load_budget().map_err(invalid)?,
         valid: true,
-        version: 11,
+        version: 12,
         group_budget: if p.flows.is_empty(){None}else{let mut r=Report::initial(&p,true,"validation".into()).map_err(invalid)?;r.capture_sources(&s.runtime);r.group.map(|g|g.budget)},
         plan_hash: p.fingerprint(),
         tracking_bytes: compiled.tracking_bytes,

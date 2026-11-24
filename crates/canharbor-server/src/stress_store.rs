@@ -648,7 +648,7 @@ fn write_checked(
                     complete: report.evidence.complete,
                     files,
                     software: env!("CARGO_PKG_VERSION").into(),
-                    measurement: if report.plan.has_classic_pattern() { "host observations; Classic pattern selected IDs require full raw evidence; not a physical bus capture" } else { "host sequence observation; samples are not a complete capture" }.into(),
+                    measurement: if report.plan.has_classic_crc() { "host Classic CRC32 observations; selected raw data-frame coverage follows plan sample_every; not a physical bus capture" } else if report.plan.has_classic_pattern() { "host observations; Classic pattern selected IDs require full raw evidence; not a physical bus capture" } else { "host sequence observation; samples are not a complete capture" }.into(),
                     plan: report.plan.clone(),
                     plan_hash: report.plan_hash.clone(),
                     source_revision: option_env!("CANHARBOR_SOURCE_REVISION").map(str::to_owned),
@@ -663,7 +663,9 @@ fn write_checked(
         let result = (|| -> Result<(), String> {
             let is_sample = matches!(
                 &event,
-                EvidenceEvent::Sample { .. } | EvidenceEvent::PatternFrame { .. }
+                EvidenceEvent::Sample { .. }
+                    | EvidenceEvent::PatternFrame { .. }
+                    | EvidenceEvent::ClassicCrcFrame { .. }
             );
             let is_audit = matches!(&event, EvidenceEvent::Lifecycle { .. });
             let is_rtt = matches!(

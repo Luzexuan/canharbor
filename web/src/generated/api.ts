@@ -170,6 +170,11 @@ export type StressTraffic =
       format: "classic";
     }
   | {
+      format: "classic_crc32_v1";
+      run_uuid: string;
+      source: number;
+    }
+  | {
       checkpoint_can_id: number;
       format: "classic_pattern_v1";
       max_pending: number;

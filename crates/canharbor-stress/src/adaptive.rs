@@ -75,6 +75,18 @@ impl Plan {
         p.coordination = None;
         p.stability = Default::default();
         p.run_tag = self.run_tag.wrapping_add(index as u32 + 1);
+        if p.traffic.is_classic_crc() {
+            p.traffic.validate()?;
+            let Traffic::ClassicCrc32V1 { run_uuid, .. } = &mut p.traffic else {
+                unreachable!()
+            };
+            let epoch = uuid::Uuid::parse_str(run_uuid)
+                .map_err(|e| e.to_string())?
+                .as_u128()
+                .checked_add(index as u128 + 1)
+                .ok_or("adaptive Classic CRC32-v1 UUID range exhausted")?;
+            *run_uuid = uuid::Uuid::from_u128(epoch).to_string();
+        }
         if let Traffic::ClassicPatternV1 { seed, .. } = &mut p.traffic {
             *seed ^= index as u32 + 1;
         }
@@ -728,7 +740,9 @@ impl Report {
         }
         let sum = group::totals(a.steps.iter().map(|s| s.report.as_ref()));
         self.version
-            >= if self.plan.requires_resource_v11() {
+            >= if self.plan.has_classic_crc() {
+                12
+            } else if self.plan.requires_resource_v11() {
                 11
             } else {
                 10
