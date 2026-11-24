@@ -306,9 +306,11 @@ name = "canharbor-driver"
 version = "0.1.0-dev"
 dependencies = [
  "canharbor-core",
+ "canharbor-platform",
  "libc",
  "sha2",
  "tokio",
+ "windows-sys",
 ]
 
 [[package]]

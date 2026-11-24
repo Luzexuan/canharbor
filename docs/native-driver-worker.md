@@ -37,3 +37,23 @@ crate itself, and the HTTP API cannot select a library path.
 Tests use a thread-checking fake driver to exercise multi-channel routing, unknown
 outcome aggregation, cancellation between startup calls, partial-resource cleanup,
 priority shutdown with a full queue, overflow isolation, and owner drop.
+
+## Explicit library loading
+
+The optional `dynamic` feature provides process-resident loading on Unix and
+Windows. Callers select an absolute path. Windows uses `LoadLibraryExW` and
+`GetProcAddress`, and searches image dependencies in the selected DLL's directory
+and the Windows system directory. Unicode paths are supported.
+
+File identity deduplicates hard links, so channel claims apply across aliases.
+The loader caches the selected image and its source digest for the process
+lifetime. A changed file observation during loading invalidates the digest.
+Images remain loaded because foreign threads may outlive adapter teardown.
+
+Windows CI builds and loads a synthetic C-ABI DLL to check symbol resolution,
+missing symbols, invalid images, Unicode paths, alias ownership and source
+metadata. Vendor adapters still supply their own ABI and device integration.
+
+```sh
+cargo test -p canharbor-driver --features dynamic --locked
+```
