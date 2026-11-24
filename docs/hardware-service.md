@@ -4,7 +4,7 @@ gs_usb is the primary hardware target. SLCAN, PEAK and Kvaser are experimental.
 No adapter has been validated; the tiers, the validation procedure and recorded
 results are in [hardware validation](hardware-validation.md).
 
-The CLI can compose the virtual bus with one explicitly selected gs_usb device.
+The CLI composes the virtual bus with explicitly selected hardware adapters.
 No USB device is opened by default. Enumeration alone sends no gs_usb commands:
 
 ```sh
@@ -30,6 +30,55 @@ The index is valid only for that enumeration and is not a persistent identity.
 Interface opening runs outside the async executor. Each open gets a fresh UUID;
 reconnecting does not resume control or transmission. Multiple device composition
 uses the core Registry, which rejects duplicate channel IDs.
+
+## Multiple adapters in one service
+
+Select a version 1 JSON startup manifest with:
+
+```sh
+canharbor serve --no-web --hardware-manifest /absolute/path/hardware.json
+```
+
+[hardware-multiple.json](../examples/hardware-multiple.json) shows one gs_usb and
+two SLCAN registrations. Replace its illustrative USB serial, VID/PID, interface,
+alternate and COM paths with explicit selections for your adapters. On Unix,
+use the serial device paths from your host. Build with the `slcan` feature when
+the manifest contains serial adapters. `--hardware-manifest` and the legacy
+`--usb`, `--slcan`, PEAK and Kvaser selection flags are mutually exclusive.
+The existing single-device commands remain available.
+
+The document requires `version: 1` and an `adapters` array of 1–32 entries, and
+is limited to 64 KiB. Unknown fields and unsupported versions are rejected.
+Each entry has a unique `name` of 1–31 ASCII letters, digits, underscores or
+hyphens. It names a registration's channel namespace. Every actual open appends
+a fresh UUID epoch, including after a failure or service restart. Read the new
+channel IDs from `canharbor devices --json` before creating sessions.
+
+- `backend: "gs_usb"` requires `vid_pid`, exactly one of `index` or `serial`,
+  and explicit numeric `interface` and `alternate` settings. USB candidates are
+  resolved from one read-only discovery snapshot per VID/PID before any adapter
+  opens. Selecting the same candidate twice, including through an index/serial
+  alias or different interface settings, is rejected. Register each USB device
+  once; its backend supplies the device's CAN channels.
+- `backend: "slcan"` requires `path`, `serial_baud` and an explicit `profile`
+  (`lawicel` or `canable-fd`). Optional `polling` defaults to false and is
+  supported by LAWICEL only. Supported UART baud settings are 9600, 19200,
+  38400, 57600, 115200 and 230400. The profile declares the firmware command
+  contract described in [SLCAN](slcan.md). Windows COM aliases and Unix
+  canonical-path aliases cannot register the same port twice.
+
+All entries' fields, names, selectors and serial settings are validated before
+opening transports. Startup opens only those transports and performs their
+existing handshakes. CAN bitrate, FD mode and acquisition still require session
+configuration and explicit control/start. If an open fails, startup waits for
+previously opened backends' shutdown reports in reverse order before returning
+the error. Registry or local-service startup failures also join cleanup. Cleanup
+failures and unconfirmed transmissions are reported; writes are never retried.
+The service and its runtime directory are created only after all hardware opens.
+
+The manifest records startup selections. Its names and USB serial selectors do
+not establish verified physical identity or adapter compatibility. Hardware
+acceptance remains scoped by [hardware validation](hardware-validation.md).
 
 The authenticated device API reports backend, simulation status and verification
 status. Hardware channels are marked hardware_unverified. The UI shows hardware
