@@ -1,9 +1,10 @@
 # Hardware validation
 
-No adapter has been validated yet. This page is the procedure for the first
-validation and the place where results are recorded. Until a row exists in the
-matrix below, every statement about hardware elsewhere in the documentation
-describes software behaviour only.
+The controlled bench validation matrix below has no recorded results. A
+[SLCAN smoke test](slcan.md#hardware-smoke-test) records a limited physical
+observation on 2026-11-05. Its device, host, frame format and remaining
+uncertainty are preserved in that record. This page defines the evidence levels,
+the controlled validation procedure and the matrix for subsequent results.
 
 ## Support tiers
 
@@ -11,10 +12,43 @@ describes software behaviour only.
 | --- | --- | --- |
 | Virtual bus | Supported | Default. Exercised by every test in CI. |
 | gs_usb | Primary hardware target | The first backend to be validated on real adapters. Defects found there take priority. |
-| SLCAN, PEAK, Kvaser | Experimental | Built in CI and tested against simulated transports or libraries only. Not validated, not maintained to the level of gs_usb, and may change or be removed. |
+| SLCAN, PEAK, Kvaser | Experimental | Built in CI and exercised with simulated transports or libraries. The limited SLCAN smoke observation is documented separately. Controlled bench coverage has no matrix entries. Maintenance coverage is below gs_usb and these backends may change or be removed. |
 
-A backend moves up a tier only with a recorded validation run, never because a
-build or a simulated test passes.
+A support tier describes maintenance coverage. A hardware result applies to its
+recorded adapter, firmware, driver, host and configuration. Changes to support
+tiers must cite controlled validation evidence and identify the supported scope.
+
+## Evidence levels
+
+| Level | Required record | Scope |
+| --- | --- | --- |
+| Software tests | Test command, code revision, simulated transport/library and result | Protocol, state and failure handling exercised by that test |
+| Hardware smoke observation | Physical device, configuration, observed RX/TX results and unresolved outcomes | The specific observed path, including incomplete or failed checks |
+| Controlled bench result | Frozen setup, explicit criteria, all attempts, raw evidence and independent verification | The adapter/firmware/driver/host/configuration combination and cases actually run |
+| Supported combination | Controlled results referenced by a maintained support declaration | The explicitly listed combinations and acceptance coverage |
+
+The SLCAN observation remains a smoke record. Its two unconfirmed submissions,
+single independent RX and no-BRS configuration remain part of its result.
+
+## Validation record
+
+Keep a versioned result bundle or stable artifact link for each run, including
+failed and interrupted attempts. Record the following fields beside the result.
+
+| Field | Content |
+| --- | --- |
+| Identity | Run ID, date, CANHarbor commit and dirty state, executable/test-program hashes |
+| Devices | Backend, model, serial or explicit physical label, firmware, open-epoch channel IDs and sender/receiver roles |
+| Host and driver | OS, architecture, native library version/hash and driver version where available |
+| Setup | Wiring and termination declaration, nominal/data bitrate, BRS, active/listen-only mode, identifier width, payload/CRC format and configuration readback scope |
+| Method | Exact commands or plan, request/response matching, deadline and timing origin, planned load, duration, acceptance criteria and sampling coverage |
+| Results | Planned, skipped, failed, unknown and submitted counts, unique peer RX, missing/duplicate/reordered/payload errors, diagnostics and cleanup |
+| Evidence | Raw files, report, manifest/hashes, verification command/result, reviewer and observed gaps |
+
+Use `unknown` with a reason when a value is unavailable. Preserve the distinction
+between requested settings, driver observations and independently measured bus
+behaviour. Keep the scope of a smoke observation when linking it from the matrix.
+The matrix below is reserved for controlled bench records.
 
 ## Procedure: two gs_usb adapters
 

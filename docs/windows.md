@@ -13,7 +13,9 @@ uncertain or suspended clock. No clock failure permits transmission.
 
 Native Windows CI exercises the foundation, core authorization, virtual CAN, capture
 format, API contracts, server and local client (including HTTP, events and downloads).
-This is not a claim of physical adapter certification.
+Physical adapter evidence follows the combination-specific levels in
+[hardware validation](hardware-validation.md). The SLCAN smoke observation was
+collected on macOS and provides no Windows acceptance result.
 
 ## Local service and private storage
 

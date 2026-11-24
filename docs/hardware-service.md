@@ -49,7 +49,8 @@ Capability queries, revision-guarded configuration, timestamp/diagnostic streams
 TX receipt querying and shutdown diagnostics are implemented. See
 [channel configuration](channel-configuration.md), [device diagnostics](device-diagnostics.md)
 and [transmission receipts](transmission-receipts.md). These interfaces report
-backend declarations and observations; no physical CAN network was accessed during development.
+backend declarations and observations. The [hardware validation record](hardware-validation.md)
+defines their evidence scope, including the limited SLCAN smoke observation.
 
 ## Host prerequisites on Linux
 
