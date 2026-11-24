@@ -6,6 +6,7 @@ Exits successfully without testing when python-can is not installed.
 import sys
 import threading
 import time
+import unittest
 
 try:
     import can
@@ -14,6 +15,10 @@ except ImportError:
     raise SystemExit(0)
 
 from canharbor.pythoncan import CanHarborBus
+from pythoncan_observability import ObservabilityTests
+
+checks = unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(ObservabilityTests))
+assert checks.wasSuccessful(), "python-can observation checks failed"
 
 runtime, library = sys.argv[1:]
 common = {"runtime_dir": runtime, "library": library}
@@ -33,6 +38,8 @@ expect(can.CanInitializationError, lambda: CanHarborBus("", **common))
 with CanHarborBus("virtual:1", **common) as listener, \
         CanHarborBus("virtual:0", active=True, receive_own_messages=True, **common) as sender:
     assert listener.recv(timeout=0.05) is None
+    assert listener.health_snapshot()["observation_complete"]
+    assert listener.read_diagnostics() == []
     # A listen-only bus refuses to send instead of changing mode.
     expect(can.CanOperationError, lambda: listener.send(can.Message(arbitration_id=1, is_extended_id=False)))
     # CAN FD needs a bus opened for it.
@@ -174,6 +181,8 @@ with CanHarborBus("virtual:1", **common) as listener, \
     wait_for(lambda: len(listener._pending) == 1, "one buffered frame")
     listener._stream.close()
     wait_for(lambda: listener._stream_error is not None, "the reader to stop")
+    assert listener.health_snapshot()["unknown_loss"]
+    assert not listener.health_snapshot()["observation_complete"]
     assert listener.recv(timeout=0).arbitration_id == 0x700
     expect(can.CanOperationError, lambda: listener.recv(timeout=0))
 
