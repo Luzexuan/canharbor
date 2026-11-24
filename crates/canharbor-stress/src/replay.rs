@@ -223,6 +223,7 @@ impl Replay {
                 event,
                 EvidenceEvent::Sample { .. }
                     | EvidenceEvent::PatternFrame { .. }
+                    | EvidenceEvent::ClassicCrcFrame { .. }
                     | EvidenceEvent::QueueSample { .. }
                     | EvidenceEvent::TrackingAdvance { .. }
             )
@@ -720,25 +721,51 @@ impl Replay {
                 data_hex,
                 wire,
                 elapsed_ns,
+            }
+            | EvidenceEvent::ClassicCrcFrame {
+                channel,
+                data_hex,
+                wire,
+                elapsed_ns,
             } => {
-                if !self.plan.traffic.is_pattern()
-                    || self.plan.evidence.sample_every != 1
+                let crc = matches!(event, EvidenceEvent::ClassicCrcFrame { .. });
+                let valid_profile = if crc {
+                    self.plan.traffic.is_classic_crc() && self.plan.evidence.sample_every > 0
+                } else {
+                    self.plan.traffic.is_pattern() && self.plan.evidence.sample_every == 1
+                };
+                if !valid_profile
                     || !self.plan.receivers.contains(channel)
                     || *elapsed_ns > 73 * 3600 * 1_000_000_000
                     || data_hex.len() > 128
                     || data_hex.len() % 2 != 0
                     || !data_hex.bytes().all(|b| b.is_ascii_hexdigit())
                 {
-                    return Err("invalid Classic pattern raw evidence".into());
+                    return Err("invalid Classic pattern/CRC raw evidence".into());
                 }
                 let data = (0..data_hex.len() / 2)
                     .map(|n| u8::from_str_radix(&data_hex[n * 2..n * 2 + 2], 16).unwrap())
                     .collect();
                 let frame = wire.frame(data)?;
-                if !self.plan.pattern_id_matches(&frame) {
-                    return Err("pattern evidence ID mismatch".into());
+                let selected = if crc {
+                    self.plan.classic_crc_id_matches(&frame)
+                        && (self.plan.evidence.sample_every == 1
+                            || self
+                                .plan
+                                .correlate(&frame, false)
+                                .is_some_and(|n| n.is_multiple_of(self.plan.evidence.sample_every)))
+                } else {
+                    self.plan.pattern_id_matches(&frame)
+                };
+                if !selected {
+                    return Err("pattern/CRC evidence ID or sampling mismatch".into());
                 }
-                *self.queue_eligible.entry(channel.clone()).or_default() += 1;
+                if !crc || self.plan.correlate(&frame, false).is_some() {
+                    *self.queue_eligible.entry(channel.clone()).or_default() += 1;
+                }
+                if crc && self.plan.evidence.sample_every != 1 && self.verifiers.is_empty() {
+                    return Ok(());
+                }
                 let v = self
                     .verifiers
                     .iter_mut()
@@ -770,6 +797,7 @@ impl Replay {
                 wire,
             } => {
                 if self.plan.traffic.is_pattern()
+                    || self.plan.traffic.is_classic_crc()
                     || !self.plan.receivers.contains(channel)
                     || self.plan.evidence.sample_every == 0
                     || !sequence.is_multiple_of(self.plan.evidence.sample_every)
@@ -968,6 +996,16 @@ impl Replay {
         self.adaptive.as_ref().map(|a| a.recovered(id))
     }
     pub fn verify_report(&self, r: &Report) -> Result<(), String> {
+        if r.plan.has_classic_crc() && r.version < 12 {
+            return Err("Classic CRC32-v1 requires report v12".into());
+        }
+        if r.plan.flows.is_empty()
+            && r.plan.adaptive.is_none()
+            && r.plan.traffic.is_classic_crc()
+            && r.integrity != r.plan.traffic.integrity()
+        {
+            return Err("Classic CRC32-v1 integrity scope mismatch".into());
+        }
         if r.plan.requires_resource_v11() && r.version < 11 {
             return Err("resource features require report v11".into());
         }

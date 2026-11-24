@@ -63,6 +63,12 @@ pub enum EvidenceEvent {
         wire: SampleWire,
         elapsed_ns: u64,
     },
+    ClassicCrcFrame {
+        channel: String,
+        data_hex: String,
+        wire: SampleWire,
+        elapsed_ns: u64,
+    },
     Diagnostic {
         channel: String,
         elapsed_ns: u64,

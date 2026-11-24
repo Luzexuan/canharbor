@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Service-owned Classic CAN sequence measurements; never infer physical ACK.
+mod classic_crc;
+pub use classic_crc::crc32_ieee;
 mod classic_pattern;
 pub use classic_pattern::{ClassicPatternReceiver, ClassicPatternTransmit};
 mod load;
@@ -437,7 +439,7 @@ impl Verifier {
                 return;
             }
         };
-        if !p.traffic.is_classic() && e.frame.data().len() < 32 {
+        if matches!(p.traffic, Traffic::FdV1 { .. }) && e.frame.data().len() < 32 {
             self.report.short_sequence_only += 1;
         }
         self.accept(p, n, e.elapsed_ns);
@@ -923,7 +925,9 @@ impl Report {
                 && plan.adaptive.is_none()
                 && plan.traffic.is_pattern())
             .then(Default::default),
-            version: if plan.requires_resource_v11() {
+            version: if plan.has_classic_crc() {
+                12
+            } else if plan.requires_resource_v11() {
                 11
             } else if plan.requires_load_v10() {
                 10
@@ -1160,7 +1164,10 @@ async fn execute_flow(
 
                             if result_run.timing.is_some() && is_rx && !plan.traffic.is_pattern() && let Ok(n)=plan.decode(&e.frame,false) && n<plan.count && !v.seen(n) {result_run.timing_rx(n,&input.observation.channel,e.received_at);}
                             if is_rx && plan.pattern_id_matches(&e.frame) && let Some(sink)=&evidence { sink.emit(EvidenceEvent::PatternFrame { channel:input.observation.channel.clone(), data_hex:e.frame.data().iter().map(|b|format!("{b:02X}")).collect(), wire:SampleWire::of(&e.frame), elapsed_ns:e.received_at.saturating_duration_since(origin).as_nanos().min(u128::from(u64::MAX)) as u64 }); }
-                            if is_rx && !plan.traffic.is_pattern() && plan.evidence.sample_every>0 && let Some(sequence)=plan.correlate(&e.frame,false) && sequence.is_multiple_of(plan.evidence.sample_every) && let Some(sink)=&evidence {
+                            if is_rx && plan.classic_crc_id_matches(&e.frame) && plan.evidence.sample_every>0 && (plan.evidence.sample_every==1 || plan.correlate(&e.frame,false).is_some_and(|n|n.is_multiple_of(plan.evidence.sample_every))) && let Some(sink)=&evidence {
+                                sink.emit(EvidenceEvent::ClassicCrcFrame{channel:input.observation.channel.clone(),data_hex:e.frame.data().iter().map(|b|format!("{b:02X}")).collect(),wire:SampleWire::of(&e.frame),elapsed_ns:e.received_at.saturating_duration_since(origin).as_nanos().min(u128::from(u64::MAX)) as u64});
+                            }
+                            if is_rx && !plan.traffic.is_pattern() && !plan.traffic.is_classic_crc() && plan.evidence.sample_every>0 && let Some(sequence)=plan.correlate(&e.frame,false) && sequence.is_multiple_of(plan.evidence.sample_every) && let Some(sink)=&evidence {
                                     sink.emit(EvidenceEvent::Sample{channel:input.observation.channel.clone(),sequence,data_hex:e.frame.data().iter().map(|b|format!("{b:02X}")).collect(),wire:Some(SampleWire::of(&e.frame)),elapsed_ns:e.received_at.saturating_duration_since(origin).as_nanos().min(u128::from(u64::MAX)) as u64});
                             }
                             if is_rx && plan.rtt.as_ref().is_some_and(|r|r.role!=RttRole::Probe) && let Ok(n)=plan.decode(&e.frame,false) && n<plan.count && !v.seen(n) && replies.try_send(n).is_err(){v.report.evidence_complete=false;}

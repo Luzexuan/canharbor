@@ -115,6 +115,62 @@ export function FlowEditor({
           </>
         )}
       </div>
+      <label>
+        <input
+          type="checkbox"
+          checked={flow.traffic?.format === "classic_crc32_v1"}
+          onChange={(e) =>
+            onChange({
+              ...flow,
+              rtt: undefined,
+              traffic: e.target.checked
+                ? {
+                    format: "classic_crc32_v1",
+                    run_uuid: crypto.randomUUID(),
+                    source: 0,
+                  }
+                : undefined,
+            })
+          }
+        />
+        {text("stress:classic_crc32_v1")}
+      </label>
+      {flow.traffic?.format === "classic_crc32_v1" && (
+        <>
+          <label>
+            {text("stress:crc_run_uuid")}
+            <input
+              value={flow.traffic.run_uuid}
+              onChange={(e) => {
+                if (flow.traffic?.format === "classic_crc32_v1")
+                  onChange({
+                    ...flow,
+                    traffic: { ...flow.traffic, run_uuid: e.target.value },
+                  });
+              }}
+            />
+          </label>
+          <label>
+            {text("stress:crc_source")}
+            <input
+              type="number"
+              min="0"
+              max="4294967295"
+              value={flow.traffic.source}
+              onChange={(e) => {
+                if (flow.traffic?.format === "classic_crc32_v1")
+                  onChange({
+                    ...flow,
+                    traffic: {
+                      ...flow.traffic,
+                      source: Number(e.target.value),
+                    },
+                  });
+              }}
+            />
+          </label>
+        </>
+      )}
       <p>{text("flow:expected_receivers")}</p>
       {channels
         .filter((c) => c.id !== flow.sender)

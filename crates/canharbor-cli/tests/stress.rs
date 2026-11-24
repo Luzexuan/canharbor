@@ -55,6 +55,50 @@ async fn cli(root: &Path, args: &[&str]) -> std::process::Output {
     .unwrap()
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn classic_crc_plan_cli_preflight_preserves_frozen_identity_without_sending() {
+    let _isolation = TIMED_CASE.acquire().await.unwrap();
+    let root = test_temp_dir().join(format!("ch-crc-cli-{}", uuid::Uuid::new_v4()));
+    let service = RunningServer::start(
+        Runtime::new(Arc::new(VirtualBus::default())),
+        &root,
+        0,
+        false,
+    )
+    .await
+    .unwrap();
+    let plan = root.join("plan.json");
+    std::fs::write(
+        &plan,
+        include_str!("../../../examples/stress/classic-crc32.json"),
+    )
+    .unwrap();
+    let p = plan.to_str().unwrap();
+    let output = cli(&root, &["stress", "validate", "--plan", p]).await;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let validated: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(validated["version"], 12);
+    assert_eq!(validated["plan"]["traffic"]["format"], "classic_crc32_v1");
+    assert_eq!(
+        validated["plan"]["traffic"]["run_uuid"],
+        "00112233-4455-4677-8899-aabbccddeeff"
+    );
+    assert_eq!(validated["plan"]["traffic"]["source"], 0);
+    assert!(
+        !cli(&root, &["stress", "run", "--plan", p])
+            .await
+            .status
+            .success()
+    );
+    assert!(service.state.runtime.list().await.is_empty());
+    assert_eq!(service.shutdown().await.unknown_tasks, 0);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "real-time stress run against a service process; see the Stress workflow or run with -- --ignored"]
 async fn stress_cli_virtual_service_validation_execution_and_export() {
     let _isolation = TIMED_CASE.acquire().await.unwrap();

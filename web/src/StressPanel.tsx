@@ -38,6 +38,11 @@ export function StressPanel({
   const [criteria, setCriteria] = useState(defaultCriteria);
   const [fd, setFd] = useState(false);
   const [pattern, setPattern] = useState(false);
+  const [crc, setCrc] = useState(false);
+  const [crcRunUuid, setCrcRunUuid] = useState<string>(() =>
+    crypto.randomUUID(),
+  );
+  const [crcSource, setCrcSource] = useState(0);
   const [checkpointId, setCheckpointId] = useState("124");
   const [patternWindow, setPatternWindow] = useState(256);
   const [dataBitrate, setDataBitrate] = useState(2000000);
@@ -98,6 +103,7 @@ export function StressPanel({
     setCanId("123");
     setFd(false);
     setPattern(false);
+    setCrc(false);
     setRttEnabled(false);
     setTrackingMode("exact");
     setQueueEnabled(false);
@@ -180,6 +186,15 @@ export function StressPanel({
       ? { topology: { bus: busLabel, wiring, aliases: declaredAliases } }
       : {}),
     criteria,
+    ...(crc
+      ? {
+          traffic: {
+            format: "classic_crc32_v1" as const,
+            run_uuid: crcRunUuid,
+            source: crcSource,
+          },
+        }
+      : {}),
     ...(pattern
       ? {
           traffic: {
@@ -355,6 +370,20 @@ export function StressPanel({
     let index = flows.length + 1;
     while (usedNames.has(`reverse-${index}`)) index++;
     let traffic = plan.traffic;
+    if (traffic?.format === "classic_crc32_v1") {
+      const crcUuid = traffic.run_uuid;
+      const usedSources = new Set(
+        [plan, ...flows].flatMap((f) =>
+          f.traffic?.format === "classic_crc32_v1" &&
+          f.traffic.run_uuid === crcUuid
+            ? [f.traffic.source]
+            : [],
+        ),
+      );
+      let source = 0;
+      while (usedSources.has(source)) source++;
+      traffic = { ...traffic, source };
+    }
     if (traffic?.format === "classic_pattern_v1") {
       let checkpoint = (id + 1) & 0x7ff;
       while (used.has(checkpoint) || checkpoint === id)
@@ -426,6 +455,27 @@ export function StressPanel({
       /* no credentials saved */
     }
   }
+  function renewRunIdentity() {
+    setTag(crypto.getRandomValues(new Uint32Array(1))[0]);
+    const uuids = new Map([[crcRunUuid, crypto.randomUUID()]]);
+    setCrcRunUuid((current) =>
+      current === crcRunUuid ? uuids.get(crcRunUuid)! : current,
+    );
+    if (
+      !flowError &&
+      flows.some((f) => f.traffic?.format === "classic_crc32_v1")
+    ) {
+      const next = flows.map((f) => {
+        if (f.traffic?.format !== "classic_crc32_v1") return f;
+        const prior = f.traffic.run_uuid;
+        if (!uuids.has(prior)) uuids.set(prior, crypto.randomUUID());
+        return { ...f, traffic: { ...f.traffic, run_uuid: uuids.get(prior)! } };
+      });
+      setFlowsText((current) =>
+        current === flowsText ? JSON.stringify(next, null, 2) : current,
+      );
+    }
+  }
   async function start() {
     if (!validation || !active || pending || !scope) return;
     setBusy(true);
@@ -455,7 +505,7 @@ export function StressPanel({
       setReport(value);
       clearPending();
       setActive(false);
-      setTag(crypto.getRandomValues(new Uint32Array(1))[0]);
+      renewRunIdentity();
     } catch (e) {
       if (e instanceof ApiFailure && !e.unknown) {
         clearPending();
@@ -483,7 +533,7 @@ export function StressPanel({
       setReport(value);
       clearPending();
       setActive(false);
-      setTag(crypto.getRandomValues(new Uint32Array(1))[0]);
+      renewRunIdentity();
     } catch (e) {
       setError(
         new LocalizedError("stress:unknownRecovery", { detail: String(e) }),
@@ -781,13 +831,15 @@ export function StressPanel({
             {text("stress:frame_protocol")}
             <select
               aria-label={text("stress:stress_protocol")}
-              value={pattern ? "pattern" : fd ? "fd" : "classic"}
+              value={crc ? "crc" : pattern ? "pattern" : fd ? "fd" : "classic"}
               onChange={(e) => {
                 setFd(e.target.value === "fd");
                 setPattern(e.target.value === "pattern");
+                setCrc(e.target.value === "crc");
               }}
             >
               <option value="classic">{text("stress:classic_sequence")}</option>
+              <option value="crc">{text("stress:classic_crc32_v1")}</option>
               <option value="pattern">
                 {text("stress:classic_pattern_v1_checkpoint")}
               </option>
@@ -796,6 +848,30 @@ export function StressPanel({
               </option>
             </select>
           </label>
+          {crc && (
+            <>
+              <label>
+                {text("stress:crc_run_uuid")}
+                <input
+                  aria-label={text("stress:crc_run_uuid")}
+                  value={crcRunUuid}
+                  onChange={(e) => setCrcRunUuid(e.target.value)}
+                />
+              </label>
+              <label>
+                {text("stress:crc_source")}
+                <input
+                  aria-label={text("stress:crc_source")}
+                  type="number"
+                  min="0"
+                  max="4294967295"
+                  value={crcSource}
+                  onChange={(e) => setCrcSource(Number(e.target.value))}
+                />
+              </label>
+              <p>{text("stress:crc_wire_scope")}</p>
+            </>
+          )}
           {pattern && (
             <>
               <label>

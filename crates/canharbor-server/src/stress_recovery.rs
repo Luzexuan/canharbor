@@ -170,9 +170,9 @@ pub(super) fn scan(path: &Path, identity: &Identity) -> Result<(Scan, Replay), S
                         | EvidenceEvent::Provenance(_)
                         | EvidenceEvent::Diagnostic { .. }
                         | EvidenceEvent::SchedulerSkip { .. } => name.starts_with("metrics-"),
-                        EvidenceEvent::Sample { .. } | EvidenceEvent::PatternFrame { .. } => {
-                            name.starts_with("samples-")
-                        }
+                        EvidenceEvent::Sample { .. }
+                        | EvidenceEvent::PatternFrame { .. }
+                        | EvidenceEvent::ClassicCrcFrame { .. } => name.starts_with("samples-"),
                         EvidenceEvent::Lifecycle { .. } => name.starts_with("events-"),
                         EvidenceEvent::Rtt { .. } | EvidenceEvent::Reply { .. } => {
                             name.starts_with("rtt-")

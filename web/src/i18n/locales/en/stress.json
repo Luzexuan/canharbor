@@ -1,4 +1,8 @@
 {
+  "classic_crc32_v1": "Classic CRC32-v1 (8 bytes)",
+  "crc_run_uuid": "CRC run UUID",
+  "crc_source": "CRC source number",
+  "crc_wire_scope": "Each 8-byte data frame contains a sequence and IEEE CRC32 bound to the run UUID and source. Full RX replay requires sample_every=1; existing evidence limits apply.",
   "additional_flows_must_be_a_json_array_of_objects": "Additional flows must be a JSON array of objects",
   "each_flow_needs_a_name_sender_numeric_can_id": "Each flow needs a name, sender, numeric CAN ID and receiver list. Use Add reverse flow to create a complete plan.",
   "stress_testing": "Stress testing",

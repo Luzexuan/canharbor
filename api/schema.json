@@ -5703,6 +5703,33 @@
         {
           "type": "object",
           "properties": {
+            "format": {
+              "type": "string",
+              "const": "classic_crc32_v1"
+            },
+            "run_uuid": {
+              "type": "string",
+              "maxLength": 36,
+              "minLength": 36,
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "source": {
+              "type": "integer",
+              "format": "uint32",
+              "maximum": 4294967295,
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "format",
+            "run_uuid",
+            "source"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
             "checkpoint_can_id": {
               "type": "integer",
               "format": "uint32",

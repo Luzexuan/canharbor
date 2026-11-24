@@ -4,6 +4,9 @@
 
 ## 兼容性与 FD 计划
 
+独立的 Classic 8 字节序号 + IEEE CRC32 格式见[Classic CRC32-v1](stress-classic-crc.md)。
+它使用报告 v12；下面的 FD-v1 CRC32C 及 RTT 线格式保持不变。
+
 旧 Classic 计划继续使用 8 字节 run tag + u32 序号，默认新增字段不参与序列化，原计划指纹保持兼容。FD/RTT/协调任务的报告版本为 4。示例见 [fd-mixed.json](../examples/stress/fd-mixed.json)。
 
 `traffic.format=fd_v1` 明确给出 `data_bitrate`、`stream`、非零 `epoch`、`seed` 和 `variants`。每个 variant 指定实际字节数及 BRS，按序号循环选择。长度支持 8、12、16、20、24、32、48、64，分别使用合法 FD DLC；不进行隐式填充。32/48/64 字节使用完整 FD v1，短帧使用独立的标签/序号格式，报告能力为 `mixed_crc32c_and_short_sequence_only`，不能声称所有帧经过应用 CRC。0–7 字节没有容纳标签与序号的空间，当前明确拒绝，不猜测帧身份。

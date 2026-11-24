@@ -6,6 +6,15 @@ use super::*;
 pub enum Traffic {
     #[default]
     Classic,
+    ClassicCrc32V1 {
+        #[schemars(
+            length(min = 36, max = 36),
+            pattern("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+        )]
+        run_uuid: String,
+        #[schemars(range(min = 0, max = 4_294_967_295u64))]
+        source: u32,
+    },
     ClassicPatternV1 {
         checkpoint_can_id: u32,
         seed: u32,
@@ -46,11 +55,16 @@ impl Traffic {
     }
     pub fn data_bitrate(&self) -> Option<u32> {
         match self {
-            Self::Classic | Self::ClassicPatternV1 { .. } => None,
+            Self::Classic | Self::ClassicPatternV1 { .. } | Self::ClassicCrc32V1 { .. } => None,
             Self::FdV1 { data_bitrate, .. } => Some(*data_bitrate),
         }
     }
     pub fn validate(&self) -> Result<(), String> {
+        if let Self::ClassicCrc32V1 { run_uuid, .. } = self
+            && !uuid::Uuid::parse_str(run_uuid).is_ok_and(|u| u.to_string() == *run_uuid)
+        {
+            return Err("Classic CRC32-v1 needs a canonical lowercase run_uuid".into());
+        }
         if let Self::ClassicPatternV1 { max_pending, .. } = self
             && (*max_pending == 0 || *max_pending > 4096)
         {
@@ -76,13 +90,14 @@ impl Traffic {
     }
     pub fn variant(&self, n: u32) -> Option<&FdVariant> {
         match self {
-            Self::Classic | Self::ClassicPatternV1 { .. } => None,
+            Self::Classic | Self::ClassicPatternV1 { .. } | Self::ClassicCrc32V1 { .. } => None,
             Self::FdV1 { variants, .. } => Some(&variants[n as usize % variants.len()]),
         }
     }
     pub fn integrity(&self) -> &'static str {
         match self {
             Self::Classic => "sequence_only",
+            Self::ClassicCrc32V1 { .. } => "crc32_ieee_sequence_v1",
             Self::ClassicPatternV1 { .. } => "classic_pattern_v1_checkpoint_required",
             Self::FdV1 { variants, .. } if variants.iter().all(|v| v.length >= 32) => {
                 "crc32c_pattern_v1"
@@ -153,6 +168,9 @@ impl Plan {
             self.extended,
         )
         .expect("validated ID");
+        if let Some(data) = self.traffic.classic_crc_payload(n) {
+            return Frame::classic(id, data).unwrap();
+        }
         let Some(v) = self.traffic.variant(n) else {
             let mut data = self.run_tag.to_be_bytes().to_vec();
             data.extend(n.to_be_bytes());
@@ -213,6 +231,13 @@ impl Plan {
             return None;
         }
         let d = frame.data();
+        if self.traffic.is_classic_crc() {
+            return self
+                .classic_crc_id_matches(frame)
+                .then(|| d.get(..4))
+                .flatten()
+                .map(|s| u32::from_be_bytes(s.try_into().unwrap()));
+        }
         if self.traffic.is_classic() || d.len() < 32 {
             if d.len() < 8 || u32::from_be_bytes(d[..4].try_into().ok()?) != self.run_tag {
                 return None;
@@ -226,6 +251,9 @@ impl Plan {
         }
     }
     pub fn decode(&self, frame: &Frame, response: bool) -> Result<u32, PayloadError> {
+        if let Some(result) = self.decode_classic_crc(frame) {
+            return result;
+        }
         let n = self
             .correlate(frame, response)
             .ok_or(PayloadError::Unrelated)?;

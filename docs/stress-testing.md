@@ -51,6 +51,7 @@ See the feature references:
 - [Timing and software provenance](stress-timing.md)
 - [Bidirectional multi-flow plans](stress-multiflow.md)
 - [Classic patterns and checkpoints](stress-pattern.md)
+- [Classic 8-byte IEEE CRC32 and raw replay](stress-classic-crc.md)
 - [CAN FD, CRC, RTT and multi-host coordination](stress-protocols.md)
 - [Adaptive plans and load shapes](stress-adaptive.md)
 - [Tracking windows, queues and benchmark evidence](stress-tracking.md)
