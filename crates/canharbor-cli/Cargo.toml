@@ -28,6 +28,7 @@ canharbor-virtual.workspace = true
 canharbor-server.workspace = true
 tokio = {workspace=true,features=["process"]}
 serde_json.workspace = true
+serde.workspace = true
 uuid.workspace = true
 futures-util.workspace = true
 clap = { version = "4", features = ["derive"] }

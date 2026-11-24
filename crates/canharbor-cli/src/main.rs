@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+mod hardware_config;
 mod i18n;
 mod input;
 mod monitor;
@@ -7,10 +8,9 @@ mod status;
 mod stress;
 mod stress_coordinate;
 mod tasks;
-use canharbor_core::runtime::Runtime;
 use canharbor_server::{
     dto::{FrameDto, FrameKind, StreamMessage},
-    local::{RunningServer, default_runtime_dir},
+    local::default_runtime_dir,
 };
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use serde_json::{Value, json};
@@ -50,6 +50,9 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         #[arg(help = "Loopback HTTP port; 0 chooses an available port")]
         port: u16,
+        #[arg(long)]
+        #[arg(help = "Version 1 JSON manifest selecting multiple gs_usb/SLCAN adapters")]
+        hardware_manifest: Option<PathBuf>,
         #[cfg(all(unix, feature = "kvaser"))]
         #[arg(long, requires = "kvaser_channel")]
         #[arg(help = "Absolute path to the compatible Kvaser native library")]
@@ -595,6 +598,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         no_web,
         log_requests,
         port,
+        hardware_manifest,
         usb,
         usb_index,
         usb_serial,
@@ -635,115 +639,98 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         if log_requests {
             canharbor_server::request_log::enable();
         }
+        let legacy_hardware = [
+            usb.is_some(),
+            #[cfg(feature = "slcan")]
+            slcan.is_some(),
+            #[cfg(all(unix, feature = "kvaser"))]
+            kvaser_library.is_some(),
+            #[cfg(all(unix, feature = "peak"))]
+            peak_library.is_some(),
+        ]
+        .into_iter()
+        .any(|selected| selected);
+        if hardware_manifest.is_some() && legacy_hardware {
+            return Err(status::input(
+                "--hardware-manifest conflicts with legacy hardware selection flags",
+            ));
+        }
+        if !no_web && !cfg!(feature = "web-ui") {
+            return Err(status::input(
+                "build with --features web-ui or use serve --no-web",
+            ));
+        }
+        let adapters = if let Some(path) = hardware_manifest {
+            hardware_config::load(&path)?
+        } else {
+            let mut adapters = Vec::new();
+            if let Some(vid_pid) = usb {
+                adapters.push(hardware_config::Adapter::GsUsb {
+                    name: "usb".into(),
+                    vid_pid,
+                    index: usb_index,
+                    serial: usb_serial,
+                    interface: usb_interface.unwrap(),
+                    alternate: usb_alternate.unwrap(),
+                });
+            }
+            #[cfg(feature = "slcan")]
+            if let Some(path) = slcan {
+                let profile = match slcan_profile.as_deref().unwrap_or("lawicel") {
+                    "lawicel" => hardware_config::Profile::Lawicel,
+                    "canable-fd" => hardware_config::Profile::CanableFd,
+                    _ => unreachable!("validated by clap"),
+                };
+                adapters.push(hardware_config::Adapter::Slcan {
+                    name: "slcan".into(),
+                    path,
+                    serial_baud: serial_baud.unwrap(),
+                    profile,
+                    polling: slcan_polling,
+                });
+            }
+            adapters
+        };
         let mut backends: Vec<Arc<dyn canharbor_core::Backend>> =
             vec![Arc::new(canharbor_virtual::VirtualBus::default())];
-        if let Some(vid_pid) = usb {
-            let id = parse_vid_pid(&vid_pid)?;
-            if usb_index.is_none() && usb_serial.is_none() {
-                return Err(status::input("--usb requires --usb-index or --usb-serial"));
-            }
-            let transport = tokio::task::spawn_blocking(move || {
-                let candidates = canharbor_gsusb::usb::discover(&[id])?;
-                let index = match (&usb_serial, usb_index) {
-                    (Some(serial), _) => {
-                        match canharbor_gsusb::usb::unique_serial(
-                            candidates.iter().map(|c| c.serial()),
-                            serial,
-                        ) {
-                            Ok(index) => index,
-                            Err(reason) => return Ok(Err(reason)),
-                        }
-                    }
-                    (None, index) => index.unwrap(),
-                };
-                let candidate = candidates
-                    .into_iter()
-                    .nth(index)
-                    .ok_or(canharbor_gsusb::Error::Protocol("USB candidate index"))?;
-                candidate
-                    .open(usb_interface.unwrap(), usb_alternate.unwrap())
-                    .map(Ok)
-            })
-            .await??
-            .map_err(|reason: &str| {
-                Box::new(status::Failure::Reported {
-                    code: 4,
-                    message: format!("--usb-serial: {reason}"),
-                }) as Box<dyn std::error::Error>
-            })?;
-            backends.push(Arc::new(
-                canharbor_gsusb::backend::GsUsbBackend::open(
-                    transport,
-                    u16::from(usb_interface.unwrap()),
+        let opening: Result<(), Box<dyn std::error::Error>> = async {
+            backends.extend(hardware_config::open(adapters).await?);
+            #[cfg(all(unix, feature = "kvaser"))]
+            if let Some(path) = kvaser_library {
+                // SAFETY: explicit startup path selects trusted native code with the
+                // documented open-source libKvaserUSB ABI; no HTTP path can load code.
+                let backend = canharbor_driver::DriverBackend::open(
+                    move || unsafe {
+                        canharbor_kvaser::KvaserDriver::load(&path, &kvaser_channel)
+                            .map(|driver| Box::new(driver) as Box<dyn canharbor_driver::Driver>)
+                    },
                     Uuid::new_v4().simple().to_string(),
                 )
-                .await?,
-            ));
-        }
-        #[cfg(feature = "slcan")]
-        if let Some(path) = slcan {
-            let profile = match slcan_profile.as_deref().unwrap_or("lawicel") {
-                "lawicel" => canharbor_slcan::Profile::Lawicel,
-                "canable-fd" => canharbor_slcan::Profile::CanableFd,
-                _ => unreachable!("validated by clap"),
-            };
-            if slcan_polling && profile == canharbor_slcan::Profile::CanableFd {
-                return Err(status::input(
-                    "--slcan-polling is unsupported with --slcan-profile canable-fd",
-                ));
+                .await?;
+                backends.push(Arc::new(backend));
             }
-            let baud =
-                serial_baud.ok_or_else(|| status::input("--slcan requires --serial-baud"))?;
-            let transport = tokio::task::spawn_blocking(move || {
-                canharbor_slcan::serial::Serial::open(&path, baud)
-            })
-            .await??;
-            backends.push(Arc::new(
-                canharbor_slcan::backend::SlcanBackend::open_with_profile(
-                    transport,
+            #[cfg(all(unix, feature = "peak"))]
+            if let Some(path) = peak_library {
+                // SAFETY: this explicit startup option selects trusted native code
+                // implementing the documented libPeakUSB 1.0.2 ABI. No HTTP input
+                // can load a library or choose a filesystem path.
+                let backend = canharbor_driver::DriverBackend::open(
+                    move || unsafe {
+                        canharbor_peak::PeakDriver::load(&path, &peak_channel)
+                            .map(|driver| Box::new(driver) as Box<dyn canharbor_driver::Driver>)
+                    },
                     Uuid::new_v4().simple().to_string(),
-                    slcan_polling,
-                    profile,
                 )
-                .await?,
-            ));
+                .await?;
+                backends.push(Arc::new(backend));
+            }
+            Ok(())
         }
-        #[cfg(all(unix, feature = "kvaser"))]
-        if let Some(path) = kvaser_library {
-            // SAFETY: explicit startup path selects trusted native code with the
-            // documented open-source libKvaserUSB ABI; no HTTP path can load code.
-            let backend = canharbor_driver::DriverBackend::open(
-                move || unsafe {
-                    canharbor_kvaser::KvaserDriver::load(&path, &kvaser_channel)
-                        .map(|driver| Box::new(driver) as Box<dyn canharbor_driver::Driver>)
-                },
-                Uuid::new_v4().simple().to_string(),
-            )
-            .await?;
-            backends.push(Arc::new(backend));
+        .await;
+        if let Err(error) = opening {
+            return Err(hardware_config::cleanup_error(&backends, error).await);
         }
-        #[cfg(all(unix, feature = "peak"))]
-        if let Some(path) = peak_library {
-            // SAFETY: this explicit startup option selects trusted native code
-            // implementing the documented libPeakUSB 1.0.2 ABI. No HTTP input
-            // can load a library or choose a filesystem path.
-            let backend = canharbor_driver::DriverBackend::open(
-                move || unsafe {
-                    canharbor_peak::PeakDriver::load(&path, &peak_channel)
-                        .map(|driver| Box::new(driver) as Box<dyn canharbor_driver::Driver>)
-                },
-                Uuid::new_v4().simple().to_string(),
-            )
-            .await?;
-            backends.push(Arc::new(backend));
-        }
-        let server = RunningServer::start(
-            Runtime::new(Arc::new(canharbor_core::registry::Registry::new(backends)?)),
-            &dir,
-            port,
-            !no_web,
-        )
-        .await?;
+        let server = hardware_config::start_service(backends, &dir, port, !no_web).await?;
         eprintln!(
             "{}{}",
             i18n::choose(
@@ -756,23 +743,43 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 format!("{}{}", i18n::choose(" at ", "，地址 "), server.state.origin)
             }
         );
-        if open {
-            let client = Client::new(dir.clone())?;
-            let v = client
-                .request("POST", "/native/pair", json!({}), None)
-                .await?;
-            if let Err(e) = browser(v["url"].as_str().ok_or("invalid pairing response")?) {
-                eprintln!("{e}")
+        let waiting: Result<(), Box<dyn std::error::Error>> = async {
+            if open {
+                let client = Client::new(dir.clone())?;
+                let v = client
+                    .request("POST", "/native/pair", json!({}), None)
+                    .await?;
+                if let Err(e) = browser(v["url"].as_str().ok_or("invalid pairing response")?) {
+                    eprintln!("{e}")
+                }
             }
+            #[cfg(unix)]
+            tokio::signal::ctrl_c().await?;
+            #[cfg(windows)]
+            shutdown
+                .recv()
+                .await
+                .ok_or("console signal stream closed")?;
+            Ok(())
         }
-        #[cfg(unix)]
-        tokio::signal::ctrl_c().await?;
-        #[cfg(windows)]
-        shutdown
-            .recv()
-            .await
-            .ok_or("console signal stream closed")?;
+        .await;
         let report = server.shutdown().await;
+        if let Err(error) = waiting {
+            let mut summary = canharbor_core::CloseSummary {
+                unknown_transmissions: report.unknown_transmissions,
+                failures: report.failures,
+            };
+            if report.unknown_tasks > 0 {
+                summary.failures.push(format!(
+                    "tasks with unknown outcomes: {}",
+                    report.unknown_tasks
+                ));
+                return Err(status::unknown(format!(
+                    "{error}; service cleanup: {summary:?}"
+                )));
+            }
+            return Err(hardware_config::with_cleanup(error, summary));
+        }
         let failed = !report.failures.is_empty();
         for failure in report.failures {
             eprintln!("{}: {failure}", i18n::choose("shutdown", "关闭"));

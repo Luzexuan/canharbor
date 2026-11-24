@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "adapters": [
+    {
+      "backend": "gs_usb",
+      "name": "usb-box",
+      "vid_pid": "1d50:606f",
+      "serial": "REPLACE_WITH_USB_SERIAL",
+      "interface": 0,
+      "alternate": 0
+    },
+    {
+      "backend": "slcan",
+      "name": "serial-a",
+      "path": "COM5",
+      "serial_baud": 115200,
+      "profile": "lawicel",
+      "polling": false
+    },
+    {
+      "backend": "slcan",
+      "name": "serial-b",
+      "path": "COM6",
+      "serial_baud": 115200,
+      "profile": "lawicel",
+      "polling": false
+    }
+  ]
+}

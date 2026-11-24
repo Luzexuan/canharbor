@@ -30,8 +30,9 @@ Requirements:
 - On Linux, device access as described in
   [hardware access](hardware-service.md#host-prerequisites-on-linux).
 
-The service opens one gs_usb device. For two separate adapters, run two
-services with different runtime directories:
+The single-device flags select one gs_usb device. For two separate adapters,
+use a [startup manifest](hardware-service.md#multiple-adapters-in-one-service)
+or run two services with different runtime directories:
 
 ```sh
 canharbor usb-list --vid-pid VENDOR:PRODUCT --show-serial
