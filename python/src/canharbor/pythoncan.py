@@ -34,6 +34,7 @@ _RENEW_SECONDS = 5.0
 # Frames buffered while the program is not calling recv(). Older ones are
 # discarded first, as a full driver receive buffer would.
 _PENDING_LIMIT = 16384
+_DIAGNOSTIC_LIMIT = 256
 
 
 class CanHarborBus(can.BusABC):
@@ -53,6 +54,18 @@ class CanHarborBus(can.BusABC):
         self._fd = bool(fd)
         self._own = bool(receive_own_messages)
         self._pending: deque = deque(maxlen=_PENDING_LIMIT)
+        self._diagnostics: deque = deque(maxlen=_DIAGNOSTIC_LIMIT)
+        self._health = {
+            "stream_gaps": 0,
+            "stream_dropped_events": 0,
+            "local_dropped_events": 0,
+            "bus_diagnostics": 0,
+            "diagnostic_dropped_events": 0,
+            "overflow_diagnostics": 0,
+            "session_faults": 0,
+            "last_fault": None,
+            "unknown_loss": False,
+        }
         # Guards the buffer and the stream state shared with the reader thread.
         self._arrived = threading.Condition()
         self._stream_error: Optional[str] = None
@@ -129,22 +142,77 @@ class CanHarborBus(can.BusABC):
             kind = batch.get("type")
             if kind == "events":
                 with self._arrived:
-                    self._pending.extend(batch.get("events", ()))
+                    events = batch.get("events", ())
+                    self._health["local_dropped_events"] += max(
+                        0, len(self._pending) + len(events) - _PENDING_LIMIT)
+                    self._pending.extend(events)
+                    for event in events:
+                        if event.get("type") == "bus_diagnostic":
+                            self._health["bus_diagnostics"] += 1
+                            if event.get("overflow"):
+                                self._health["overflow_diagnostics"] += 1
+                                self._health["unknown_loss"] = True
+                            self._record_diagnostic(event)
                     self._arrived.notify_all()
+            elif kind == "gap":
+                with self._arrived:
+                    self._health["stream_gaps"] += 1
+                    try:
+                        raw_count = batch["count"]
+                        if not isinstance(raw_count, str) or not raw_count.isascii() or not raw_count.isdecimal():
+                            raise ValueError("invalid gap count")
+                        count = int(raw_count)
+                        if count > 0xffffffffffffffff:
+                            raise ValueError("gap count exceeds u64")
+                        self._health["stream_dropped_events"] += count
+                    except (KeyError, TypeError, ValueError):
+                        self._health["unknown_loss"] = True
+                    self._record_diagnostic(batch)
             elif kind == "session_fault":
+                with self._arrived:
+                    self._health["session_faults"] += 1
+                    self._health["last_fault"] = batch.get("code")
+                    self._health["unknown_loss"] = True
+                    self._record_diagnostic(batch)
                 error = f"CANHarbor channel fault: {batch.get('code')}"
                 break
             elif kind == "resume_unavailable":
+                with self._arrived:
+                    self._health["unknown_loss"] = True
+                    self._record_diagnostic(batch)
                 error = "CANHarbor event stream history is unavailable"
                 break
-            # A gap means observations were dropped for this subscriber; later
-            # frames are still valid, so reception continues.
         with self._arrived:
             # Frames already buffered are still delivered before the error.
             self._stream_error = error if error is not None else self._stream_error
             if error is None and not self._closing:
                 self._stream_error = "CANHarbor event stream ended"
+            if self._stream_error is not None:
+                self._health["unknown_loss"] = True
             self._arrived.notify_all()
+
+    def _record_diagnostic(self, event: dict) -> None:
+        # The reader holds _arrived for both diagnostic retention and accounting.
+        if len(self._diagnostics) == _DIAGNOSTIC_LIMIT:
+            self._health["diagnostic_dropped_events"] += 1
+        self._diagnostics.append(dict(event))
+
+    def health_snapshot(self) -> dict:
+        """Return cumulative bridge observations, independent of physical bus loss."""
+        with self._arrived:
+            health = dict(self._health)
+            health["stream_error"] = self._stream_error
+            health["observation_complete"] = not (
+                health["unknown_loss"] or health["stream_gaps"]
+                or health["local_dropped_events"] or health["diagnostic_dropped_events"])
+            return health
+
+    def read_diagnostics(self) -> list[dict]:
+        """Drain retained diagnostics in stream order without receiving CAN messages."""
+        with self._arrived:
+            events = list(self._diagnostics)
+            self._diagnostics.clear()
+            return events
 
     def _message(self, event: dict) -> Optional[can.Message]:
         if event.get("type") != "frame_received":

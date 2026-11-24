@@ -171,7 +171,48 @@ The interface keeps the service's rules rather than python-can's usual defaults:
   service's periodic tasks. Filters are applied by python-can in software.
 - Bus error frames and state changes are not reported as messages.
 
+`bus.health_snapshot()` returns a thread-safe copy of cumulative bridge counters
+since this bus was opened. `stream_gaps` counts gap messages and
+`stream_dropped_events` sums their reported counts. `local_dropped_events` counts
+events evicted from the 16384-event receive buffer, including diagnostics and
+own-message events before `recv()` filters them. These counts describe separate
+loss locations; they are not a physical CAN frame-loss total.
+
+`bus.read_diagnostics()` drains a separate 256-record FIFO containing the
+original `bus_diagnostic`, `gap`, `session_fault` and `resume_unavailable` records.
+Timestamp quality, raw timestamps, error classes, raw bytes and overflow flags
+remain in these records. Reading diagnostics does not consume ordinary CAN
+messages. When the FIFO fills, its oldest record is discarded and
+`diagnostic_dropped_events` increases. `bus_diagnostics`, `overflow_diagnostics`
+and `session_faults` remain cumulative after the FIFO is drained, and `last_fault`
+retains the latest session fault code.
+
+`observation_complete` becomes false after a gap, either local queue loses a
+record, an overflow diagnostic or a stream failure. `unknown_loss` indicates
+that an overflow, fault, missing gap count or stream failure prevents a complete
+loss count. Neither flag resets when records are drained or later frames arrive.
+These flags cover this bridge's observations only. Zero overflow diagnostics
+does not establish zero hardware errors; hardware error counters remain
+unavailable through this interface. The snapshot includes `stream_error`, and
+the existing `recv()` error still follows any already-buffered frames.
+
+Both methods are nonblocking local reads. They perform no service I/O, renew no
+control and remain readable after shutdown. Returned dictionaries belong to the
+caller. Software CAN filters and `receive_own_messages` apply to `recv()` only;
+they do not suppress diagnostic records or loss counters.
+
+```python
+health = bus.health_snapshot()
+if not health["observation_complete"]:
+    print("incomplete observations", health)
+for diagnostic in bus.read_diagnostics():
+    print(diagnostic)
+```
+
 `python/tests/pythoncan.py` exercises classic, extended, remote and CAN FD
 frames, own-message delivery, listen-only refusal and shutdown against a
 virtual service. It is skipped when python-can is not installed. No hardware
-was used.
+was used. It also runs `python/tests/pythoncan_observability.py`, which injects
+fake streams and clients to check loss counters, diagnostic retention, filters,
+concurrent access and shutdown without a service or native library. The latter
+can be run directly with `python/src` on `PYTHONPATH` and python-can installed.
