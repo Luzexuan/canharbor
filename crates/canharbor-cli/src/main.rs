@@ -528,6 +528,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
+    if let Command::Stress {
+        command: stress::Command::Generate(options),
+    } = &args.command
+    {
+        return stress::generate(options);
+    }
     let dir = args.runtime_dir.unwrap_or_else(default_runtime_dir);
     if let Command::Capture {
         command: CaptureCommand::Inspect { input, limit },

@@ -34,6 +34,45 @@ unknown-outcome retry is performed.
 
 ## Plans and reports
 
+### Generate an all-to-all plan offline
+
+`stress generate` writes an existing Classic `Plan` JSON to stdout and checks
+static and resource bounds without contacting a service. Select 2–8 distinct
+channels. Each selected channel sends to every other selected channel, so six
+channels produce six flows and 30 directed peer links.
+
+For a fixed **aggregate** 600 frames/s load lasting 600 seconds:
+
+```sh
+canharbor stress generate --channel virtual:0 --channel virtual:1 --aggregate-fps 600 --duration-seconds 600 > plan.json
+```
+
+Here each of the two senders is assigned 300 frames/s. With six selected
+channels, the same aggregate rate assigns 100 frames/s to each sender. Rates
+must divide evenly by the number of channels; the generator rejects rounding.
+Fixed loads are represented as one existing stage. For a staircase, repeat
+`--stage AGGREGATE_FPS:SECONDS` instead of the fixed-rate options:
+
+```sh
+canharbor stress generate --channel virtual:0 --channel virtual:1 --channel virtual:2 --channel virtual:3 --channel virtual:4 --channel virtual:5 --bitrate 1000000 --stage 600:30 --stage 1500:30 --stage 3000:30 --stage 4500:30 --stage 6000:30 > six-node.json
+```
+
+The checked-in [six-node example](../examples/stress/six-node-staircase.json)
+matches this command. Its channel IDs are replaceable roles: the default
+service exposes only `virtual:0` and `virtual:1`. Use the actual selected channel
+IDs from `canharbor devices` before validating a hardware plan.
+
+`--first-id` selects the first hexadecimal CAN ID (default `100`); `--extended`
+selects 29-bit identifiers. `--first-run-tag` selects the first decimal run tag
+(default `1`). IDs and tags increase by one in channel order, with range checks.
+Optionally repeat `--alias` once per channel, in the same order, to include
+unique role aliases. The generated plan enables ACK-capable receivers and uses
+the existing 8-byte Classic tag/sequence payload, scheduler and evidence defaults.
+
+Run `stress validate --plan plan.json` against the intended service to check
+channel availability and bitrate capabilities. Starting still requires
+`stress run --plan plan.json --active`.
+
 Fixed-count, staged and soak plans freeze configuration, resource budgets and
 criteria before execution. Configuration changes require a new validation hash.
 The service reserves the required device set before starting acquisition;

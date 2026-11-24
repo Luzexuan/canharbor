@@ -22,6 +22,7 @@ fn help_language_can_be_selected_before_or_after_subcommands() {
         vec!["send", "--lang=zh-CN", "--help"],
         vec!["task", "create", "--lang", "zh-CN", "--help"],
         vec!["stress", "run", "--lang", "zh-CN", "--help"],
+        vec!["stress", "generate", "--lang", "zh-CN", "--help"],
         vec!["sequence", "receive", "--lang", "zh-CN", "--help"],
         vec!["capture", "inspect", "--lang", "zh-CN", "--help"],
     ] {

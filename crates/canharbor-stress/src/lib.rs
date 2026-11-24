@@ -12,6 +12,7 @@ mod tracking;
 pub use tracking::{QueueOptions, QueueReport, Tracking, TrackingReport};
 mod group;
 pub use group::{ChannelBudget, DeviceBudget, Flow, FlowReport, GroupBudget, GroupReport};
+pub mod templates;
 mod timing;
 pub use timing::*;
 mod provenance;
