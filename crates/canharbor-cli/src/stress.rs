@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 use canharbor_client::LocalClient;
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use serde_json::{Value, json};
 use std::{error::Error, path::PathBuf, time::Duration};
 #[derive(Subcommand)]
 pub enum Command {
+    /// Generate an all-to-all Classic plan without contacting the service
+    Generate(Generate),
     /// Read retained run events after a revision
     Events {
         id: String,
@@ -60,12 +62,88 @@ pub enum Command {
     /// Delete a terminal run and its evidence
     Delete { id: String },
 }
+
+#[derive(Args)]
+pub struct Generate {
+    /// Repeat for each sender; every other selected channel is its receiver
+    #[arg(long, required = true)]
+    channel: Vec<String>,
+    /// Optional alias per channel, in the same order
+    #[arg(long)]
+    alias: Vec<String>,
+    /// First hexadecimal CAN ID; one consecutive ID is assigned per sender
+    #[arg(long, default_value = "100", value_parser = crate::input::hex_u32)]
+    first_id: u32,
+    /// Use 29-bit CAN identifiers
+    #[arg(long)]
+    extended: bool,
+    /// First decimal run tag; one consecutive tag is assigned per sender
+    #[arg(long, default_value_t = 1)]
+    first_run_tag: u32,
+    /// Nominal CAN bitrate in bit/s
+    #[arg(long, default_value_t = 500000)]
+    bitrate: u32,
+    /// Fixed total frames/s across all selected senders
+    #[arg(long, requires = "duration_seconds", conflicts_with = "stage")]
+    aggregate_fps: Option<u32>,
+    /// Fixed load duration in seconds
+    #[arg(long, requires = "aggregate_fps", conflicts_with = "stage")]
+    duration_seconds: Option<u32>,
+    /// Repeat aggregate FPS:SECONDS for each staircase stage
+    #[arg(long, value_parser = parse_stage, required_unless_present = "aggregate_fps")]
+    stage: Vec<canharbor_stress::Stage>,
+}
+
+fn parse_stage(value: &str) -> Result<canharbor_stress::Stage, String> {
+    let (fps, seconds) = value
+        .split_once(':')
+        .ok_or("stage must be aggregate FPS:SECONDS")?;
+    Ok(canharbor_stress::Stage {
+        name: format!("{fps}-fps"),
+        fps: fps.parse().map_err(|_| "stage fps must be a u32 integer")?,
+        duration_seconds: seconds
+            .parse()
+            .map_err(|_| "stage seconds must be a u32 integer")?,
+        warmup_seconds: 0,
+    })
+}
+
+pub fn generate(options: &Generate) -> Result<(), Box<dyn Error>> {
+    let stages = if let (Some(fps), Some(duration_seconds)) =
+        (options.aggregate_fps, options.duration_seconds)
+    {
+        vec![canharbor_stress::Stage {
+            name: "fixed".into(),
+            fps,
+            duration_seconds,
+            warmup_seconds: 0,
+        }]
+    } else {
+        options.stage.clone()
+    };
+    let plan = canharbor_stress::templates::AllToAll {
+        channels: options.channel.clone(),
+        aliases: options.alias.clone(),
+        first_can_id: options.first_id,
+        extended: options.extended,
+        first_run_tag: options.first_run_tag,
+        bitrate: options.bitrate,
+        stages,
+    }
+    .generate()
+    .map_err(crate::status::input)?;
+    crate::print(serde_json::to_value(plan)?);
+    Ok(())
+}
 fn id_path(id: &str) -> Result<String, Box<dyn Error>> {
     let id = uuid::Uuid::parse_str(id)?;
     Ok(format!("/stress/runs/{id}"))
 }
 pub async fn run(client: &LocalClient, cmd: Command) -> Result<(), Box<dyn Error>> {
     match cmd {
+        Command::Generate(_) => {
+            unreachable!("offline generation is handled before client creation")
+        }
         Command::StopFlow { id, flow } => {
             if flow.is_empty()
                 || flow.len() > 32

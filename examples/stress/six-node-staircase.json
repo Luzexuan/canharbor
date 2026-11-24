@@ -1,0 +1,297 @@
+{
+  "flows": [
+    {
+      "name": "node-2",
+      "sender": "virtual:1",
+      "receivers": [
+        "virtual:0",
+        "virtual:2",
+        "virtual:3",
+        "virtual:4",
+        "virtual:5"
+      ],
+      "can_id": 257,
+      "extended": false,
+      "run_tag": 2,
+      "count": 0,
+      "fps": 0,
+      "stages": [
+        {
+          "name": "600-fps",
+          "fps": 100,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "1500-fps",
+          "fps": 250,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "3000-fps",
+          "fps": 500,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "4500-fps",
+          "fps": 750,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "6000-fps",
+          "fps": 1000,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "node-3",
+      "sender": "virtual:2",
+      "receivers": [
+        "virtual:0",
+        "virtual:1",
+        "virtual:3",
+        "virtual:4",
+        "virtual:5"
+      ],
+      "can_id": 258,
+      "extended": false,
+      "run_tag": 3,
+      "count": 0,
+      "fps": 0,
+      "stages": [
+        {
+          "name": "600-fps",
+          "fps": 100,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "1500-fps",
+          "fps": 250,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "3000-fps",
+          "fps": 500,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "4500-fps",
+          "fps": 750,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "6000-fps",
+          "fps": 1000,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "node-4",
+      "sender": "virtual:3",
+      "receivers": [
+        "virtual:0",
+        "virtual:1",
+        "virtual:2",
+        "virtual:4",
+        "virtual:5"
+      ],
+      "can_id": 259,
+      "extended": false,
+      "run_tag": 4,
+      "count": 0,
+      "fps": 0,
+      "stages": [
+        {
+          "name": "600-fps",
+          "fps": 100,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "1500-fps",
+          "fps": 250,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "3000-fps",
+          "fps": 500,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "4500-fps",
+          "fps": 750,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "6000-fps",
+          "fps": 1000,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "node-5",
+      "sender": "virtual:4",
+      "receivers": [
+        "virtual:0",
+        "virtual:1",
+        "virtual:2",
+        "virtual:3",
+        "virtual:5"
+      ],
+      "can_id": 260,
+      "extended": false,
+      "run_tag": 5,
+      "count": 0,
+      "fps": 0,
+      "stages": [
+        {
+          "name": "600-fps",
+          "fps": 100,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "1500-fps",
+          "fps": 250,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "3000-fps",
+          "fps": 500,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "4500-fps",
+          "fps": 750,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "6000-fps",
+          "fps": 1000,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "node-6",
+      "sender": "virtual:5",
+      "receivers": [
+        "virtual:0",
+        "virtual:1",
+        "virtual:2",
+        "virtual:3",
+        "virtual:4"
+      ],
+      "can_id": 261,
+      "extended": false,
+      "run_tag": 6,
+      "count": 0,
+      "fps": 0,
+      "stages": [
+        {
+          "name": "600-fps",
+          "fps": 100,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "1500-fps",
+          "fps": 250,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "3000-fps",
+          "fps": 500,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "4500-fps",
+          "fps": 750,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        },
+        {
+          "name": "6000-fps",
+          "fps": 1000,
+          "duration_seconds": 30,
+          "warmup_seconds": 0
+        }
+      ]
+    }
+  ],
+  "sender": "virtual:0",
+  "receivers": [
+    "virtual:1",
+    "virtual:2",
+    "virtual:3",
+    "virtual:4",
+    "virtual:5"
+  ],
+  "can_id": 256,
+  "extended": false,
+  "run_tag": 1,
+  "stages": [
+    {
+      "name": "600-fps",
+      "fps": 100,
+      "duration_seconds": 30,
+      "warmup_seconds": 0
+    },
+    {
+      "name": "1500-fps",
+      "fps": 250,
+      "duration_seconds": 30,
+      "warmup_seconds": 0
+    },
+    {
+      "name": "3000-fps",
+      "fps": 500,
+      "duration_seconds": 30,
+      "warmup_seconds": 0
+    },
+    {
+      "name": "4500-fps",
+      "fps": 750,
+      "duration_seconds": 30,
+      "warmup_seconds": 0
+    },
+    {
+      "name": "6000-fps",
+      "fps": 1000,
+      "duration_seconds": 30,
+      "warmup_seconds": 0
+    }
+  ],
+  "evidence": {
+    "max_bytes": 268435456,
+    "segment_bytes": 4194304,
+    "sample_every": 0
+  },
+  "count": 0,
+  "fps": 0,
+  "bitrate": 1000000,
+  "receivers_active": true,
+  "drain_ms": 200
+}

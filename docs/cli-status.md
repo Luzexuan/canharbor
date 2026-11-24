@@ -18,6 +18,11 @@ backend failure is not automatically reclassified as an uncertain transmission;
 complete, explicit outcome metadata determines that distinction. Unstructured
 server errors and older envelopes without outcome metadata remain unknown.
 
+`stress generate` is an offline command. It emits only a Classic plan JSON on
+stdout, checks static and resource bounds, and returns 2 for invalid generation
+input. Its rates are aggregate across all selected senders. See the
+[all-to-all examples](stress-testing.md#generate-an-all-to-all-plan-offline).
+
 After an active session starts, the send command makes one POST for the frame.
 A lost/malformed response or SIGINT while awaiting that result returns 7. It
 prints the session and request ID and does not resubmit. A structured unknown
