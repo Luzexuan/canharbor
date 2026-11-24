@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Bounded service-side periodic execution. No implicit lease renewal or restart.
+//! Bounded periodic execution and response correlation. No implicit renewal or restart.
+pub mod transaction_match;
 use canharbor_core::{
     Frame,
     runtime::{Runtime, RuntimeError, TransmissionCancellation},

@@ -110,6 +110,7 @@ validation limits, use the [status page](docs/status.md).
 - [Recording](docs/capture-service.md) and [offline inspection](docs/offline-capture.md)
 - [Signal decoding from DBC files](docs/dbc.md)
 - [Bounded communication checks](docs/sequence-test.md)
+- [Rust response matching component](docs/transaction-match.md)
 - [Stress testing](docs/stress-testing.md)
 - [Rust client](docs/rust-client.md), [C ABI](docs/c-abi.md), [Python client](python/README.md) and its [python-can interface](python/README.md#python-can-interface)
 
