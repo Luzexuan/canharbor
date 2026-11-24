@@ -13,6 +13,12 @@ pub struct Stamp {
     identity: (u64, u64),
     change: (i64, i64),
 }
+impl Stamp {
+    /// OS file identity shared by hard links to the same regular file.
+    pub fn identity(&self) -> (u64, u64) {
+        self.identity
+    }
+}
 pub fn open_regular(path: &Path) -> io::Result<File> {
     let mut options = OpenOptions::new();
     options.read(true);

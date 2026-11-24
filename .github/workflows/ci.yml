@@ -63,6 +63,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.1
+          targets: i686-pc-windows-msvc
           components: rustfmt, clippy
       - uses: actions/setup-python@v7.1.0
         with:
@@ -70,6 +71,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.4.2'
+      - run: cargo test -p canharbor-driver --features dynamic --locked
       # Optional at runtime; installed so the python-can interface test runs.
       - run: python -m pip install python-can==4.6.1
       - run: bun install --cwd web --frozen-lockfile

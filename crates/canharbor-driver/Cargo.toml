@@ -7,9 +7,13 @@ repository.workspace = true
 rust-version.workspace = true
 [features]
 default = []
-dynamic = ["dep:libc"]
+dynamic = ["dep:libc", "dep:canharbor-platform", "dep:windows-sys"]
 [dependencies]
 sha2 = "0.11"
 libc = { version = "0.2", optional = true }
+canharbor-platform = { path = "../canharbor-platform", optional = true }
 canharbor-core.workspace = true
 tokio.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", optional = true, features = ["Win32_Foundation", "Win32_System_LibraryLoader"] }
