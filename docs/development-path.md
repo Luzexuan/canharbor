@@ -4,7 +4,7 @@
 
 Fork 位于 https://github.com/Luzexuan/canharbor，上游为 https://github.com/soulteary/canharbor。本地 `main` 跟踪 `origin/main`，规划位于 `codex/atomic-development-roadmap` 分支。
 
-本表包含 53 个开发或验收单元和 12 项已有能力基线。各单元的实施状态均为“未开始”。每个单元按一个可观察行为组织，合入时同时交付必要调用方、契约生成物、兼容读取和针对性测试。
+本表包含 53 个开发或验收单元和 12 项已有能力基线。“各单元均未开始”描述的是 2026-11-17 编制时的基线；本表保留当时的能力与缺口，不作为实时完成清单。2026-11-24 起的实施、独立提交、Draft PR、软件检查和硬件待验状态见[开发进度](development-progress.md)。每个单元按一个可观察行为组织，合入时同时交付必要调用方、契约生成物、兼容读取和针对性测试。
 
 “并行批次”由硬依赖计算。同批次单元可以独立开发，修改共享 schema、capture 或报告组件时仍需协调合入。验收节点需要对应前置功能，功能单元可以先完成自己的软件测试。已被其他单元依赖的改动按依赖逆序回退。
 
@@ -215,8 +215,8 @@ Phorge 参考来自固定版本仓库文档及历史聊天。每个原子单元�
 - S49 [crates/canharbor-cli/src/stress.rs](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/crates/canharbor-cli/src/stress.rs)。当前实现和待补边界，固定提交 6bde320473ba
 - S50 [crates/canharbor-stress/src/traffic.rs](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/crates/canharbor-stress/src/traffic.rs)。当前实现和待补边界，固定提交 6bde320473ba
 - S51 [crates/canharbor-stress/src/classic_pattern.rs](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/crates/canharbor-stress/src/classic_pattern.rs)。当前实现和待补边界，固定提交 6bde320473ba
-- S52 [../CAN_test/scripts/can_test.py](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/../CAN_test/scripts/can_test.py)。当前实现和待补边界，固定提交 6bde320473ba
-- S53 [../CAN_test/scripts/six_slcan_bench.py](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/../CAN_test/scripts/six_slcan_bench.py)。当前实现和待补边界，固定提交 6bde320473ba
+- S52 本机对照文件 [CAN_test/scripts/can_test.py](C:/Users/17700/CAN_test/scripts/can_test.py)。属于独立 CAN_test 项目，不在 CANHarbor 上游固定提交中；本机副本可能随测试开发变化。
+- S53 本机对照文件 [CAN_test/scripts/six_slcan_bench.py](C:/Users/17700/CAN_test/scripts/six_slcan_bench.py)。属于独立 CAN_test 项目，不在 CANHarbor 上游固定提交中；本机副本可能随测试开发变化。
 - S54 [crates/canharbor-stress/src/load.rs](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/crates/canharbor-stress/src/load.rs)。当前实现和待补边界，固定提交 6bde320473ba
 - S55 [crates/canharbor-stress/src/lib.rs](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/crates/canharbor-stress/src/lib.rs)。当前实现和待补边界，固定提交 6bde320473ba
 - S56 [crates/canharbor-stress/src/criteria.rs](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/crates/canharbor-stress/src/criteria.rs)。当前实现和待补边界，固定提交 6bde320473ba
@@ -259,7 +259,7 @@ Phorge 参考来自固定版本仓库文档及历史聊天。每个原子单元�
 - S93 [docs/capture-format.md](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/docs/capture-format.md)。当前实现和待补边界，固定提交 6bde320473ba
 - S94 [crates/canharbor-server/src/stress.rs](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/crates/canharbor-server/src/stress.rs)。当前实现和待补边界，固定提交 6bde320473ba
 - S95 [web/src/StressReportView.tsx](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/web/src/StressReportView.tsx)。当前实现和待补边界，固定提交 6bde320473ba
-- S96 [../CAN_test/config/sample_aliases.json](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/../CAN_test/config/sample_aliases.json)。当前实现和待补边界，固定提交 6bde320473ba
+- S96 本机对照文件 [CAN_test/config/sample_aliases.json](C:/Users/17700/CAN_test/config/sample_aliases.json)。属于独立 CAN_test 项目，不在 CANHarbor 上游固定提交中；本机副本可能随样品登记变化。
 - S97 [crates/canharbor-dbc/src/lib.rs](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/crates/canharbor-dbc/src/lib.rs)。当前实现和待补边界，固定提交 6bde320473ba
 - S98 [crates/canharbor-dbc/tests/reference.rs](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/crates/canharbor-dbc/tests/reference.rs)。当前实现和待补边界，固定提交 6bde320473ba
 - S99 [crates/canharbor-cli/src/monitor.rs](https://github.com/soulteary/canharbor/blob/6bde320473ba1d5e07231dee8baa661fbf02c84a/crates/canharbor-cli/src/monitor.rs)。当前实现和待补边界，固定提交 6bde320473ba
