@@ -1,7 +1,8 @@
 # SLCAN implementation
 
-> Experimental backend: tested against simulated transports or libraries only.
-> See [hardware validation](hardware-validation.md) for the support tiers.
+> Experimental backend. Software tests use simulated transports and
+> pseudo-terminals. A limited physical smoke observation is recorded below.
+> See [hardware validation](hardware-validation.md) for support tiers and evidence levels.
 
 The serial backend has two explicitly selected firmware profiles. No ports are
 automatically probed and no firmware dialect is inferred from a version string.
@@ -110,8 +111,8 @@ After the `002` submission, one independent FD RX arrived on standard ID `402`:
 The recording completed with one RX event and zero reported drops. The session
 remained healthy, stop/close commands were submitted, and service shutdown
 retained two unconfirmed transmissions with exit code 7 and no cleanup failure.
-No independent response to `001` was observed. This validates this device's
-32-byte, standard-ID, no-BRS path; actual 5 Mbit/s bus traffic, BRS, extended IDs,
+No independent response to `001` was observed. This smoke observation covers this
+device's 32-byte, standard-ID, no-BRS path; actual 5 Mbit/s bus traffic, BRS, extended IDs,
 64-byte frames and listen-only behavior were not tested on hardware. With BRS
 disabled these frames used the nominal 1 Mbit/s throughout. Firmware command
 acceptance and bus error counters remain unavailable.
